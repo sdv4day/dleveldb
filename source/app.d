@@ -150,13 +150,7 @@ void benchDbOperations()
     auto options = Options();
     options.createIfMissing = true;
 
-    DB db;
-    Status s = DB.open(options, dbPath, db);
-    if (!s.ok())
-    {
-        writeln("打开数据库失败: ", s.toString());
-        return;
-    }
+    auto db = new LevelDB(options, dbPath);
     writeln("数据库已打开");
 
     // 顺序写
@@ -167,7 +161,7 @@ void benchDbOperations()
         {
             string key = text("key_", i);
             string val = text("val_", i);
-            db.put(WriteOptions(), Slice(key), Slice(val));
+            db.put(Slice(key), Slice(val));
         }
         auto elapsed = MonoTime.currTime - start;
         double ops = count * 1_000_000.0 / elapsed.total!"usecs";
@@ -182,9 +176,9 @@ void benchDbOperations()
         for (size_t i = 0; i < count; i++)
         {
             string key = text("key_", i);
-            ubyte[] value;
-            s = db.get(ReadOptions(), Slice(key), value);
-            if (s.ok()) found++;
+            string value;
+            if (db.get(Slice(key), value))
+                found++;
         }
         auto elapsed = MonoTime.currTime - start;
         double ops = count * 1_000_000.0 / elapsed.total!"usecs";
@@ -205,7 +199,7 @@ void benchDbOperations()
                 string val = text("bv_", i + j);
                 batch.put(Slice(key), Slice(val));
             }
-            db.write(WriteOptions(), batch);
+            db.write(batch);
         }
         auto elapsed = MonoTime.currTime - start;
         double ops = count * 1_000_000.0 / elapsed.total!"usecs";
@@ -219,7 +213,7 @@ void benchDbOperations()
         for (size_t i = 0; i < count; i++)
         {
             string key = text("key_", i);
-            db.delete_(WriteOptions(), Slice(key));
+            db.del(Slice(key));
         }
         auto elapsed = MonoTime.currTime - start;
         double ops = count * 1_000_000.0 / elapsed.total!"usecs";

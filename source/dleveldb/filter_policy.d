@@ -107,6 +107,29 @@ public:
     }
 }
 
+/**
+ * 用户自定义过滤器策略
+ * 
+ * 用户可继承此类实现自定义过滤器逻辑
+ * 示例：
+ *   class MyFilter : UserFilterPolicy {
+ *       override string name() const { return "MyFilter"; }
+ *       override void createFilter(Slice[] keys, int n, ref ubyte[] dst) const { ... }
+ *       override bool keyMayMatch(Slice key, Slice filter) const { ... }
+ *   }
+ */
+abstract class UserFilterPolicy : FilterPolicy
+{
+    /// 过滤器名称（由子类实现）
+    abstract override string name() const;
+
+    /// 创建过滤器（由子类实现）
+    abstract override void createFilter(Slice[] keys, int n, ref ubyte[] dst) const;
+
+    /// 查询键是否可能匹配（由子类实现）
+    abstract override bool keyMayMatch(Slice key, Slice filter) const;
+}
+
 /// 创建布隆过滤器
 FilterPolicy newBloomFilterPolicy(int bitsPerKey = 10)
 {

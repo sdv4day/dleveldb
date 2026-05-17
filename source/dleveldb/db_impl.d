@@ -3,7 +3,6 @@ module dleveldb.db_impl;
 import dleveldb.slice;
 import dleveldb.status;
 import dleveldb.options;
-import dleveldb.db;
 import dleveldb.dbformat;
 import dleveldb.memtable;
 import dleveldb.write_batch;
@@ -38,7 +37,7 @@ import core.atomic : atomicLoad, atomicStore, MemoryOrder;
  * - 读取：MemTable和SSTable读取无锁
  * - 压缩：后台线程异步执行
  */
-class DBImpl : DB
+class DBImpl
 {
 private:
     string dbname_;

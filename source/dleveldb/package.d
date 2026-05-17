@@ -8,10 +8,13 @@
  * - 键过滤器
  * - 压缩过滤器
  * - OOP设计
+ * - 泛型 put/get/del/find/get_slice
+ * - 自定义过滤器
+ * - LRUCache (2Q缓存)
  */
 module dleveldb;
 
-// 核心接口
+// 核心类
 public import dleveldb.db;
 public import dleveldb.options;
 public import dleveldb.status;
@@ -34,3 +37,12 @@ public import dleveldb.comparator;
 
 // 环境
 public import dleveldb.env;
+
+// 异常
+public import dleveldb.exceptions;
+
+// 缓存
+public import dleveldb.cache;
+
+// 扩展
+public import dleveldb.ext;

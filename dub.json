@@ -8,6 +8,9 @@
 	"name": "dleveldb",
 	"targetType": "library",
 	"sourcePaths": ["source"],
+	"dependencies": {
+		"cachetools": "~>1.0.1"
+	},
 	"configurations": [
 		{
 			"name": "library",

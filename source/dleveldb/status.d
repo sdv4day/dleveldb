@@ -48,6 +48,18 @@ struct Status
 
     bool ok() const pure nothrow @safe @nogc { return msg_ is null; }
 
+    /// 获取状态码
+    Code code() const pure nothrow @safe
+    {
+        if (msg_ is null) return Code.ok;
+        if (msg_.startsWith("NotFound")) return Code.notFound;
+        if (msg_.startsWith("Corruption")) return Code.corruption;
+        if (msg_.startsWith("Not implemented")) return Code.notSupported;
+        if (msg_.startsWith("Invalid argument")) return Code.invalidArgument;
+        if (msg_.startsWith("IO error")) return Code.ioError;
+        return Code.ok;
+    }
+
     bool isNotFound() const pure nothrow @safe
     {
         return !ok() && msg_.startsWith("NotFound");
