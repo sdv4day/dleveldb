@@ -1,0 +1,17 @@
+.dub
+docs.json
+__dummy.html
+docs/
+/dleveldb
+dleveldb.so
+dleveldb.dylib
+dleveldb.dll
+libdleveldb.a
+dleveldb.a
+dleveldb.lib
+dleveldb-test-*
+*.exe
+*.pdb
+*.o
+*.obj
+*.lst

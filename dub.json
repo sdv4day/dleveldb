@@ -1,0 +1,36 @@
+{
+	"description": "A LevelDB-compatible key-value storage engine written in D",
+	"license": "BSL-1.0",
+	"authors": [
+		"sdv"
+	],
+	"copyright": "Copyright © 2026, sdv",
+	"name": "dleveldb",
+	"targetType": "library",
+	"sourcePaths": ["source"],
+	"configurations": [
+		{
+			"name": "library",
+			"targetType": "library",
+			"excludedSourceFiles": ["source/app.d"]
+		},
+		{
+			"name": "unittest",
+			"targetType": "library",
+			"excludedSourceFiles": ["source/app.d"]
+		},
+		{
+			"name": "benchmark",
+			"targetType": "executable",
+			"mainSourceFile": "source/app.d"
+		}
+	],
+    "buildTypes": {
+        "debug": {
+            "buildOptions": ["debugMode", "debugInfo"]
+        },
+        "debug-profile": {
+            "buildOptions": ["debugMode", "debugInfo", "profile"]
+        }
+    }
+}
