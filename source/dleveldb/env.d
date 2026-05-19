@@ -3,6 +3,7 @@ module dleveldb.env;
 import dleveldb.slice;
 import dleveldb.status;
 import core.sync.mutex;
+import std.parallelism : task, TaskPool;
 
 /**
  * 文件类型枚举
@@ -108,6 +109,7 @@ class PosixEnv : Env
 private:
     import core.sync.mutex;
     Mutex mutex_;
+    TaskPool bgPool_;       /// 延迟初始化：首次调用 schedule() 时创建
 
 public:
     this()
@@ -215,10 +217,10 @@ public:
 
     Status removeDir(string dir)
     {
-        import std.file : rmdirRecurse;
+        import std.file : rmdir;
         try
         {
-            rmdirRecurse(dir);
+            rmdir(dir);
             return Status();
         }
         catch (Exception e)
@@ -263,34 +265,43 @@ public:
 
     Status unlockFile(FileLock lock)
     {
+        // lock 参数由接口约束，unlock 在简化实现中为空操作
         return Status();
     }
 
-    void schedule(void delegate() task)
+    void schedule(void delegate() fn)
     {
-        import core.thread : Thread;
-        // 简化实现：在新线程中执行
-        auto t = new Thread({
-            task();
-        });
-        t.start();
+        // 延迟初始化 TaskPool：不在 shared static this() 中创建，
+        // 避免 D 运行时初始化期间的线程创建死锁。
+        if (bgPool_ is null)
+        {
+            synchronized (mutex_)
+            {
+                if (bgPool_ is null)
+                {
+                    auto pool = new TaskPool(1);
+                    pool.isDaemon = true;   // 守护线程，不阻止进程退出
+                    bgPool_ = pool;
+                }
+            }
+        }
+        // 使用 TaskPool 复用后台线程，避免每次创建新 OS 线程
+        bgPool_.put(task(fn));
     }
 
-    void startThread(void delegate() task)
+    void startThread(void delegate() fn)
     {
-        import core.thread : Thread;
-        auto t = new Thread({
-            task();
-        });
-        t.start();
+        // startThread 语义为创建独立线程，不使用共享线程池
+        task(fn).executeInNewThread();
     }
 
     ulong nowMicros() const
     {
         import std.datetime : Clock;
-        import core.time : Duration;
+        import core.time : usecs;
         auto now = Clock.currTime();
-        return cast(ulong) now.toUnixTime() * 1_000_000;
+        return cast(ulong) (now.toUnixTime() * 1_000_000L
+            + now.fracSecs.total!"usecs");
     }
 
     void sleepForMicroseconds(int micros)
