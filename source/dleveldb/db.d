@@ -86,7 +86,7 @@ public:
     void put(K, V)(in K key, in V value, const(WriteOptions) opt = WriteOptions())
     {
         checkOpen();
-        auto s = impl_.put(opt, toSlice(key), toSlice(value));
+        auto s = impl_.put(opt, toSliceKey(key), toSlice(value));
         if (!s.ok())
             throw new LeveldbException(s);
     }
@@ -104,7 +104,7 @@ public:
     {
         checkOpen();
         ubyte[] buf;
-        auto s = impl_.get(opt, toSlice(key), buf);
+        auto s = impl_.get(opt, toSliceKey(key), buf);
         if (!s.ok())
         {
             if (s.isNotFound())
@@ -124,7 +124,7 @@ public:
     void del(K)(in K key, const(WriteOptions) opt = WriteOptions())
     {
         checkOpen();
-        auto s = impl_.delete_(opt, toSlice(key));
+        auto s = impl_.delete_(opt, toSliceKey(key));
         if (!s.ok())
             throw new LeveldbException(s);
     }
@@ -148,7 +148,7 @@ public:
     {
         checkOpen();
         ubyte[] buf;
-        auto s = impl_.get(opt, toSlice(key), buf);
+        auto s = impl_.get(opt, toSliceKey(key), buf);
         if (!s.ok())
         {
             if (s.isNotFound())
@@ -210,11 +210,8 @@ public:
     /// 销毁数据库
     static void destroyDB(Options opt, string dbpath)
     {
-        import dleveldb.env : defaultEnv;
-        import dleveldb.filename : currentFileName;
         import std.file : exists, rmdirRecurse;
 
-        auto env = opt.env ? opt.env : defaultEnv();
         string dir = dbpath;
         if (dir.exists())
             dir.rmdirRecurse();
@@ -237,15 +234,32 @@ private:
     }
 
     /// 将任意类型转换为 Slice
+    /// 返回的Slice在下次调用toSlice前有效（TLS缓冲区）
     static Slice toSlice(T)(in T val)
     {
         static if (is(T == Slice))
         {
             return val;
         }
-        else static if (isSomeString!T || isDynamicArray!T)
+        else static if (isSomeString!T)
         {
             return Slice(val);
+        }
+        else static if (isDynamicArray!T)
+        {
+            import std.range.primitives : ElementEncodingType;
+            static if (is(ElementEncodingType!T == ubyte) || is(ElementEncodingType!T == const(ubyte)))
+            {
+                return Slice(val);
+            }
+            else static if (is(ElementEncodingType!T == char) || is(ElementEncodingType!T == const(char)))
+            {
+                return Slice(val);
+            }
+            else
+            {
+                return Slice(cast(const(void*)) val.ptr, val.length * ElementEncodingType!T.sizeof);
+            }
         }
         else static if (isPointer!T)
         {
@@ -253,7 +267,30 @@ private:
         }
         else
         {
-            return Slice(cast(const(void*)) &val, T.sizeof);
+            // 基本类型和POD结构体：使用Slice.Ref存储到TLS缓冲区
+            return Slice.Ref(val);
+        }
+    }
+    
+    /// 将任意类型转换为 Slice（使用独立的TLS缓冲区，用于key）
+    /// 与toSlice使用不同的缓冲区，避免put(key,value)时覆盖
+    static Slice toSliceKey(T)(in T val)
+    {
+        static if (is(T == Slice))
+        {
+            return val;
+        }
+        else static if (isSomeString!T || isDynamicArray!T || isPointer!T)
+        {
+            return toSlice(val);
+        }
+        else
+        {
+            // 使用独立的TLS缓冲区存储key
+            import std.traits : Unqual;
+            static Unqual!T keyStorage;
+            keyStorage = cast(Unqual!T) val;
+            return Slice(cast(const(void*)) &keyStorage, Unqual!T.sizeof);
         }
     }
 

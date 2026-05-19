@@ -215,10 +215,10 @@ private:
     /// 解析内部键
     bool parseInternalKey(Slice ikey, ref ParsedInternalKey parsed) nothrow @nogc
     {
-        if (ikey.size() < 8)
+        if (ikey.size() < ulong.sizeof)
             return false;
-        parsed.userKey = Slice(ikey.data(), ikey.size() - 8);
-        ulong tag = decodeFixed64(ikey.data() + ikey.size() - 8);
+        parsed.userKey = Slice(ikey.data(), ikey.size() - ulong.sizeof);
+        ulong tag = decodeFixed64(ikey.data() + ikey.size() - ulong.sizeof);
         parsed.sequence = unpackSequence(tag);
         parsed.type = unpackValueType(tag);
         return true;
