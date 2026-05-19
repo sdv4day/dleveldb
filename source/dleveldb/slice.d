@@ -147,26 +147,11 @@ struct Slice
         return size_;
     }
 
-    /// 比较两个Slice（使用D标准数组比较）
+    /// 比较两个Slice（使用 std.algorithm.cmp）
     int opCmp(Slice rhs) const nothrow @nogc
     {
-        size_t minLen = size_ < rhs.size_ ? size_ : rhs.size_;
-        int r = 0;
-        if (minLen > 0)
-        {
-            auto a = data_[0 .. minLen];
-            auto b = rhs.data_[0 .. minLen];
-            if (a < b) r = -1;
-            else if (a > b) r = 1;
-        }
-        if (r == 0)
-        {
-            if (size_ < rhs.size_)
-                r = -1;
-            else if (size_ > rhs.size_)
-                r = 1;
-        }
-        return r;
+        import std.algorithm.comparison : cmp;
+        return cmp(data_[0 .. size_], rhs.data_[0 .. rhs.size_]);
     }
 
     /// 相等比较（使用D标准数组比较）
@@ -272,4 +257,51 @@ Slice sliceFromString(const(char)[] s) pure nothrow @safe @nogc
 Slice sliceFromBytes(const(ubyte)[] arr) pure nothrow @safe @nogc
 {
     return Slice(arr);
+}
+
+///
+unittest
+{
+    // 从字符串构造
+    auto s1 = Slice("hello");
+    assert(s1.size() == 5);
+    assert(!s1.empty());
+    assert(s1.asString() == "hello");
+
+    // 从字节数组构造
+    ubyte[] bytes = [0x48, 0x65, 0x6C, 0x6C, 0x6F];
+    auto s2 = Slice(bytes);
+    assert(s2.size() == 5);
+    assert(s2.asBytes() == bytes);
+
+    // 从指针+长度构造
+    auto s3 = Slice(bytes.ptr, bytes.length);
+    assert(s3.size() == 5);
+
+    // 空Slice
+    auto empty = Slice();
+    assert(empty.empty());
+    assert(!empty.ok());
+
+    // 清空
+    auto s4 = Slice("test");
+    s4.clear();
+    assert(s4.empty());
+
+    // 比较
+    auto a = Slice("apple");
+    auto b = Slice("banana");
+    auto c = Slice("apple");
+    assert(a == c);
+    assert(a != b);
+    assert(a < b);
+    assert(b > a);
+
+    // 类型转换
+    auto numSlice = Slice("\x0A\x00\x00\x00");
+    assert(numSlice.as!int() == 10);
+
+    // Slice.Ref
+    auto refSlice = Slice.Ref!int(42);
+    assert(refSlice.as!int() == 42);
 }
