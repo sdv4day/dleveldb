@@ -26,10 +26,10 @@ private:
     Env env_;
     int maxOpenFiles_;
 
-    // 简化实现：使用数组存储已打开的表
-    // 生产实现应使用LRU缓存
-    Table[] tables_;
-    ulong[] tableNumbers_;
+    // 使用关联数组实现 O(1) 查找
+    // order_ 记录插入顺序，用于容量溢出时 FIFO 淘汰
+    Table[ulong] tables_;
+    ulong[] order_;
     Mutex mutex_;
 
 public:
@@ -44,10 +44,7 @@ public:
 
     ~this()
     {
-        foreach (t; tables_)
-        {
-            // Table对象由GC回收
-        }
+        // Table对象由GC回收，文件句柄在析构中关闭
     }
 
     /// 在指定表中查找
@@ -61,21 +58,23 @@ public:
         return table.get(options, key, value);
     }
 
-    /// 驱逐指定表的缓存（Table对象由GC回收，文件句柄在析构中关闭）
+    /// 驱逐指定表的缓存（evict 操作较罕见，使用线性扫描是合理的）
     void evict(ulong fileNumber) 
     {
         synchronized (mutex_)
         {
-            for (size_t i = 0; i < tableNumbers_.length; i++)
+            if (auto removed = fileNumber in tables_)
             {
-                if (tableNumbers_[i] == fileNumber)
+                tables_.remove(fileNumber);
+                // 从 order_ 中移除（线性扫描，evict 调用频率低，开销可接受）
+                for (size_t i = 0; i < order_.length; i++)
                 {
-                    // 移除
-                    tables_[i] = tables_[$ - 1];
-                    tableNumbers_[i] = tableNumbers_[$ - 1];
-                    tables_.length = tables_.length - 1;
-                    tableNumbers_.length = tableNumbers_.length - 1;
-                    return;
+                    if (order_[i] == fileNumber)
+                    {
+                        order_[i] = order_[$ - 1];
+                        order_ = order_[0 .. $ - 1];
+                        break;
+                    }
                 }
             }
         }
@@ -124,13 +123,10 @@ private:
     {
         synchronized (mutex_)
         {
-            // 先在缓存中查找
-            for (size_t i = 0; i < tableNumbers_.length; i++)
+            // 先在缓存中查找（O(1) 关联数组）
+            if (auto t = fileNumber in tables_)
             {
-                if (tableNumbers_[i] == fileNumber)
-                {
-                    return tables_[i];
-                }
+                return *t;
             }
 
             // 打开新表
@@ -151,16 +147,17 @@ private:
             if (!s.ok())
                 return null;
 
-            // 添加到缓存
-            tables_ ~= table;
-            tableNumbers_ ~= fileNumber;
+            // 添加到缓存（O(1) 关联数组）
+            tables_[fileNumber] = table;
+            order_ ~= fileNumber;
 
             // 简单的缓存淘汰
             if (cast(int) tables_.length > maxOpenFiles_ - 10)
             {
-                // 移除最旧的，Table对象由GC回收（文件句柄在析构中关闭）
-                tables_ = tables_[1 .. $];
-                tableNumbers_ = tableNumbers_[1 .. $];
+                // 移除最旧的（FIFO）
+                ulong oldest = order_[0];
+                tables_.remove(oldest);
+                order_ = order_[1 .. $];
             }
 
             return table;

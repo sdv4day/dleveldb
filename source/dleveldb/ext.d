@@ -4,6 +4,7 @@ import dleveldb.db;
 import dleveldb.options;
 import dleveldb.slice;
 import dleveldb.comparator;
+import dleveldb.coding;
 import dleveldb.exceptions;
 import dleveldb.iterator;
 
@@ -98,8 +99,8 @@ final class ComparatorUlong : Comparator
         if (a.size() < ulong.sizeof || b.size() < ulong.sizeof)
             return a.opCmp(b);
 
-        ulong va = *(cast(ulong*) a.data());
-        ulong vb = *(cast(ulong*) b.data());
+        ulong va = decodeFixed64(cast(const(ubyte)*) a.data());
+        ulong vb = decodeFixed64(cast(const(ubyte)*) b.data());
         if (va < vb) return -1;
         if (va > vb) return 1;
         return 0;

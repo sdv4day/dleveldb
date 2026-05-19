@@ -124,7 +124,7 @@ public:
         // 编码格式：varint32(key_size+8) + user_key + packed_tag + varint32(val_size) + value
         size_t keySize = key.size();
         size_t valSize = value.size();
-        size_t internalKeySize = keySize + 8;
+        size_t internalKeySize = keySize + ulong.sizeof;
         int varintKeyLen = varintLength(cast(uint) internalKeySize);
         int varintValLen = varintLength(cast(uint) valSize);
         size_t encodedLen = varintKeyLen + internalKeySize + varintValLen + valSize;
@@ -142,7 +142,7 @@ public:
 
         // 编码packed_tag
         encodeFixed64(cast(ubyte*) p, packSequenceAndType(seq, type));
-        p += 8;
+        p += ulong.sizeof;
 
         // 编码varint32(val_size)
         p += encodeVarint32(cast(ubyte*) p, cast(uint) valSize);
@@ -177,12 +177,11 @@ public:
 
             // 解码varint32获取internal_key长度
             uint internalKeyLen;
-            const(ubyte)* dataStart = entryPtr;
             if (!decodeVarint32(entryPtr, entryPtr + 10, internalKeyLen))
                 return false;
 
             // 比较user_key
-            size_t userKeyLen = internalKeyLen - 8;
+            size_t userKeyLen = internalKeyLen - ulong.sizeof;
             Slice entryUserKey = Slice(entryPtr, userKeyLen);
             if (entryUserKey == key.userKey())
             {

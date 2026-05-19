@@ -8,7 +8,7 @@ module dleveldb.log_format;
 enum int kBlockSize = 32768;
 
 /// 记录头大小：checksum(4) + length(2) + type(1) = 7字节
-enum int kHeaderSize = 4 + 2 + 1;
+enum int kHeaderSize = uint.sizeof + 2 + 1;
 
 /// 记录类型
 enum RecordType : ubyte

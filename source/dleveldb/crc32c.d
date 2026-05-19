@@ -68,3 +68,24 @@ uint crc32cSlice(const(ubyte)[] data) nothrow @nogc
 {
     return crc32cValue(data.ptr, data.length);
 }
+
+///
+unittest
+{
+    // 空数据
+    assert(crc32cValue(null, 0) == 0);
+    assert(crc32cSlice([]) == 0);
+
+    // 已知测试向量
+    ubyte[] test1 = [0x61, 0x62, 0x63]; // "abc"
+    ubyte[] test2 = [0x48, 0x65, 0x6C, 0x6C, 0x6F]; // "Hello"
+
+    assert(crc32cValue(test1.ptr, test1.length) != 0);
+    assert(crc32cSlice(test2) != 0);
+
+    // 分块计算与整体计算一致
+    auto full = crc32cValue(test2.ptr, test2.length);
+    auto part1 = crc32cExtend(0, test2.ptr, 2);
+    auto part2 = crc32cExtend(part1, test2.ptr + 2, 3);
+    assert(part2 == full);
+}

@@ -83,11 +83,23 @@ Compressor newCompressor(CompressionType type)
             {
                 // return new SnappyCompressor();
             }
+            else
+            {
+                import core.stdc.stdio : fprintf, stderr;
+                fprintf(stderr, "Warning: Snappy compression not available"
+                    ~ " (compile with -version=HaveSnappy), falling back to none.\n");
+            }
             return new NoneCompressor(); // 降级为无压缩
         case CompressionType.zstd:
             version (HaveZstd)
             {
                 // return new ZstdCompressor();
+            }
+            else
+            {
+                import core.stdc.stdio : fprintf, stderr;
+                fprintf(stderr, "Warning: Zstd compression not available"
+                    ~ " (compile with -version=HaveZstd), falling back to none.\n");
             }
             return new NoneCompressor(); // 降级为无压缩
     }

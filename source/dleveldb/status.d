@@ -1,7 +1,6 @@
 module dleveldb.status;
 
 import dleveldb.slice;
-import std.algorithm.searching : startsWith;
 
 /**
  * 操作结果状态，类似leveldb的Status
@@ -20,9 +19,11 @@ struct Status
     }
 
     private string msg_;
+    private Code code_ = Code.ok;
 
     this(Code code, string msg)
     {
+        code_ = code;
         final switch (code) with (Code)
         {
             case ok:
@@ -49,40 +50,34 @@ struct Status
     bool ok() const pure nothrow @safe @nogc { return msg_ is null; }
 
     /// 获取状态码
-    Code code() const pure nothrow @safe
+    Code code() const pure nothrow @safe @nogc
     {
-        if (msg_ is null) return Code.ok;
-        if (msg_.startsWith("NotFound")) return Code.notFound;
-        if (msg_.startsWith("Corruption")) return Code.corruption;
-        if (msg_.startsWith("Not implemented")) return Code.notSupported;
-        if (msg_.startsWith("Invalid argument")) return Code.invalidArgument;
-        if (msg_.startsWith("IO error")) return Code.ioError;
-        return Code.ok;
+        return code_;
     }
 
-    bool isNotFound() const pure nothrow @safe
+    bool isNotFound() const pure nothrow @safe @nogc
     {
-        return !ok() && msg_.startsWith("NotFound");
+        return code_ == Code.notFound;
     }
 
-    bool isCorruption() const pure nothrow @safe
+    bool isCorruption() const pure nothrow @safe @nogc
     {
-        return !ok() && msg_.startsWith("Corruption");
+        return code_ == Code.corruption;
     }
 
-    bool isNotSupported() const pure nothrow @safe
+    bool isNotSupported() const pure nothrow @safe @nogc
     {
-        return !ok() && msg_.startsWith("Not implemented");
+        return code_ == Code.notSupported;
     }
 
-    bool isInvalidArgument() const pure nothrow @safe
+    bool isInvalidArgument() const pure nothrow @safe @nogc
     {
-        return !ok() && msg_.startsWith("Invalid argument");
+        return code_ == Code.invalidArgument;
     }
 
-    bool isIoError() const pure nothrow @safe
+    bool isIoError() const pure nothrow @safe @nogc
     {
-        return !ok() && msg_.startsWith("IO error");
+        return code_ == Code.ioError;
     }
 
     string toString() const pure nothrow @safe

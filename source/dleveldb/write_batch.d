@@ -34,7 +34,7 @@ public:
     this()
     {
         // 初始化：8字节序列号 + 4字节计数
-        rep_.length = 12;
+        rep_.length = ulong.sizeof + uint.sizeof;
         rep_[] = 0;
     }
 
@@ -55,12 +55,12 @@ public:
     /// 获取操作计数
     int count() const 
     {
-        return cast(int) decodeFixed32(rep_.ptr + 8);
+        return cast(int) decodeFixed32(rep_.ptr + ulong.sizeof);
     }
 
     void setCount(int c)  @nogc
     {
-        encodeFixed32(rep_.ptr + 8, cast(uint) c);
+        encodeFixed32(rep_.ptr + ulong.sizeof, cast(uint) c);
     }
 
     /// 添加Put操作
@@ -83,7 +83,7 @@ public:
     /// 清空
     void clear() pure nothrow @safe
     {
-        rep_.length = 12;
+        rep_.length = ulong.sizeof + uint.sizeof;
         rep_[] = 0;
     }
 
@@ -92,7 +92,7 @@ public:
     {
         assert(other.sequence() == 0);
         setCount(count() + other.count());
-        rep_ ~= other.rep_[12 .. $];
+        rep_ ~= other.rep_[ulong.sizeof + uint.sizeof .. $];
     }
 
     /// 迭代器接口：遍历WriteBatch中的所有操作
@@ -105,10 +105,10 @@ public:
         const(ubyte)* ptr = input.data();
         const(ubyte)* limit = ptr + input.size();
 
-        if (ptr + 12 > limit)
+        if (ptr + ulong.sizeof + uint.sizeof > limit)
             return statusCorruption("malformed WriteBatch (too small)");
 
-        ptr += 12; // 跳过header
+        ptr += ulong.sizeof + uint.sizeof; // 跳过header
 
         while (ptr < limit)
         {

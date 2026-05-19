@@ -68,7 +68,7 @@ private:
         // 参数验证
         if (height < 1 || height > kMaxHeight)
         {
-            assert(0, "SkipList: invalid height");
+            throw new Exception("SkipList: invalid height");
         }
         
         // 计算节点大小：Node基础 + (height-1)个next指针
@@ -78,7 +78,7 @@ private:
         // 内存分配检查
         if (mem is null || mem.ptr is null)
         {
-            assert(0, "SkipList: out of memory");
+            throw new Exception("SkipList: out of memory");
         }
 
         Node* n = cast(Node*) mem.ptr;
@@ -94,12 +94,11 @@ private:
         return n;
     }
 
-    /// 随机高度（使用xorshift高质量随机数）
+    /// 随机高度（使用xorshift高质量随机数，线程安全）
     int randomHeight()
     {
-        // 使用函数级静态变量的xorshift128+随机数生成器
-        // 比LCG质量更高，分布更均匀
-        // 注意：static局部变量是函数级静态，非TLS；写操作在mutex_下串行化，安全
+        // D语言中函数内static变量是线程局部存储(TLS)，
+        // 每个线程有独立的seed，无需额外同步。
         static uint seed;
         if (seed == 0) 
         {

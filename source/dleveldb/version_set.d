@@ -492,22 +492,13 @@ public:
         {
             c = new Compaction(level);
 
-            // 选择level层的输入文件
+            // 选择level层的输入文件（简化：选择第一个文件）
             auto levelFiles = current_.files(level);
             if (levelFiles.length > 0)
             {
-                if (level == 0)
-                {
-                    // Level 0：选择所有与压缩指针重叠的文件
-                    // 简化：选择第一个文件
-                    c.inputs_[0] ~= levelFiles[0];
-                }
-                else
-                {
-                    // Level 1+：选择与压缩指针重叠的第一个文件
-                    // 简化：选择第一个文件
-                    c.inputs_[0] ~= levelFiles[0];
-                }
+                // TODO: Level 0 应选择所有与压缩指针重叠的文件
+                //       Level 1+ 需使用压缩指针来选取
+                c.inputs_[0] ~= levelFiles[0];
             }
 
             // 选择level+1层与输入重叠的文件

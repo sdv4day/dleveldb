@@ -6,6 +6,7 @@ import dleveldb.env;
 
 import std.format : format;
 import std.conv : to;
+import std.path : buildPath;
 
 /**
  * 文件命名规则
@@ -46,25 +47,25 @@ string descriptorFileName(string dbname, ulong number)
 /// 构建当前文件名
 string currentFileName(string dbname)
 {
-    return dbname ~ "/CURRENT";
+    return buildPath(dbname, "CURRENT");
 }
 
 /// 构建锁文件名
 string lockFileName(string dbname)
 {
-    return dbname ~ "/LOCK";
+    return buildPath(dbname, "LOCK");
 }
 
 /// 构建信息日志文件名
 string infoLogFileName(string dbname)
 {
-    return dbname ~ "/LOG";
+    return buildPath(dbname, "LOG");
 }
 
 /// 构建旧信息日志文件名
 string oldInfoLogFileName(string dbname)
 {
-    return dbname ~ "/LOG.old";
+    return buildPath(dbname, "LOG.old");
 }
 
 /// 构建临时文件名
@@ -78,8 +79,6 @@ string tempFileName(string dbname, ulong number)
  */
 bool parseFileName(string fname, ref ulong number, ref FileType type)
 {
-    Slice s = sliceFromString(fname);
-
     // 去除目录前缀
     size_t pos = fname.lastIndexOf('/');
     if (pos != size_t.max)
