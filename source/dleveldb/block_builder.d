@@ -39,7 +39,7 @@ public:
     /// 估算当前块大小
     size_t estimatedSize() const nothrow @nogc
     {
-        return buffer_.length + restarts_.length * 4 + 4;
+        return buffer_.length + restarts_.length * uint.sizeof + uint.sizeof;
     }
 
     /// 添加键值对
@@ -111,13 +111,13 @@ public:
 
         // 写入重启点数组
         size_t oldLen = buffer_.length;
-        buffer_.length = oldLen + restarts_.length * 4 + 4;
+        buffer_.length = oldLen + restarts_.length * uint.sizeof + uint.sizeof;
 
         ubyte* p = buffer_.ptr + oldLen;
         foreach (restart; restarts_)
         {
             encodeFixed32(p, cast(uint) restart);
-            p += 4;
+            p += uint.sizeof;
         }
         encodeFixed32(p, cast(uint) restarts_.length);
 

@@ -28,7 +28,7 @@ uint decodeFixed32(const(ubyte)* ptr) pure nothrow @trusted @nogc
 /// 编码uint64（小端序）
 void encodeFixed64(ubyte* dst, ulong value) pure nothrow @trusted @nogc
 {
-    for (int i = 0; i < 8; i++)
+    for (int i = 0; i < ulong.sizeof; i++)
     {
         dst[i] = cast(ubyte) ((value >> (i * 8)) & 0xff);
     }
@@ -38,7 +38,7 @@ void encodeFixed64(ubyte* dst, ulong value) pure nothrow @trusted @nogc
 ulong decodeFixed64(const(ubyte)* ptr) pure nothrow @trusted @nogc
 {
     ulong result = 0;
-    for (int i = 0; i < 8; i++)
+    for (int i = 0; i < ulong.sizeof; i++)
     {
         result |= cast(ulong) ptr[i] << (i * 8);
     }
@@ -83,7 +83,7 @@ bool decodeVarint32(ref const(ubyte)* ptr, const(ubyte)* limit, ref uint result)
             return true;
         }
         shift += 7;
-        if (shift >= 32)
+        if (shift >= uint.sizeof * 8)
             return false;
     }
     return false;
@@ -123,7 +123,7 @@ bool decodeVarint64(ref const(ubyte)* ptr, const(ubyte)* limit, ref ulong result
             return true;
         }
         shift += 7;
-        if (shift >= 64)
+        if (shift >= ulong.sizeof * 8)
             return false;
     }
     return false;
@@ -184,4 +184,55 @@ bool getLengthPrefixedSlice(ref const(ubyte)* ptr, const(ubyte)* limit, ref Slic
     result = Slice(ptr, len);
     ptr += len;
     return true;
+}
+
+///
+unittest
+{
+    // 测试定长编解码
+    ubyte[4] buf4;
+    encodeFixed32(buf4.ptr, 0xDEADBEEF);
+    assert(decodeFixed32(buf4.ptr) == 0xDEADBEEF);
+    encodeFixed32(buf4.ptr, 0);
+    assert(decodeFixed32(buf4.ptr) == 0);
+    encodeFixed32(buf4.ptr, 0xFFFFFFFF);
+    assert(decodeFixed32(buf4.ptr) == 0xFFFFFFFF);
+
+    ubyte[8] buf8;
+    encodeFixed64(buf8.ptr, 0xDEADBEEFCAFEBABE);
+    assert(decodeFixed64(buf8.ptr) == 0xDEADBEEFCAFEBABE);
+    encodeFixed64(buf8.ptr, 0);
+    assert(decodeFixed64(buf8.ptr) == 0);
+
+    // 测试varint32编解码
+    ubyte[10] varBuf;
+    uint[] testVals = [0, 1, 127, 128, 16383, 16384, 2097151, 2097152, 0xFFFFFFFF];
+    foreach (v; testVals)
+    {
+        auto n = encodeVarint32(varBuf.ptr, v);
+        const(ubyte)* ptr = varBuf.ptr;
+        const(ubyte)* limit = ptr + n;
+        uint decoded;
+        assert(decodeVarint32(ptr, limit, decoded));
+        assert(decoded == v);
+    }
+
+    // 测试varint64编解码
+    ulong[] testVals64 = [0, 1, 127, 128, 16383, 16384, 0xFFFFFFFF, 0xFFFFFFFFFFFFFFFF];
+    foreach (v; testVals64)
+    {
+        auto n = encodeVarint64(varBuf.ptr, v);
+        const(ubyte)* ptr = varBuf.ptr;
+        const(ubyte)* limit = ptr + n;
+        ulong decoded;
+        assert(decodeVarint64(ptr, limit, decoded));
+        assert(decoded == v);
+    }
+
+    // 测试长度前缀Slice
+    ubyte[] data = [5, 0x48, 0x65, 0x6C, 0x6C, 0x6F]; // varint(5) + "Hello"
+    const(ubyte)* ptr = data.ptr;
+    Slice result;
+    assert(getLengthPrefixedSlice(ptr, ptr + data.length, result));
+    assert(result.asString() == "Hello");
 }

@@ -3,6 +3,7 @@ module dleveldb.arena;
 import std.experimental.allocator;
 import std.experimental.allocator.mallocator : Mallocator;
 import std.typecons : Ternary;
+import core.exception : OutOfMemoryError;
 
 /**
  * Arena内存池分配器
@@ -32,24 +33,23 @@ public:
 
     ~this() nothrow
     {
-        // 注意: Arena分配的内存由MemTable通过引用使用,
-        // GC回收顺序不确定,如果在MemTable之前回收Arena会导致段错误。
-        // 因此不在析构函数中释放内存,由OS在进程退出时回收。
-        // 如果需要显式释放,应调用deallocateAll()方法。
-        blocks_ = null;
+        // MemTable持有对Arena的引用(arena_字段)，GC会跟随引用链，
+        // 因此不会在MemTable之前回收Arena。
+        // 显式释放所有分配的内存块。
+        deallocateAll();
     }
 
     // === IAllocator 接口实现 ===
 
     override @property uint alignment() nothrow
     {
-        return 8;
+        return cast(uint)(void*).sizeof;
     }
 
     override size_t goodAllocSize(size_t s) nothrow
     {
         // 根据大小选择对齐策略，返回对齐后的大小
-        size_t a = (s >= 64) ? 64 : (s >= 16) ? 16 : 8;
+        size_t a = (s >= (void*).sizeof * 8) ? (void*).sizeof * 8 : (s >= (void*).sizeof * 2) ? (void*).sizeof * 2 : (void*).sizeof;
         return (s + a - 1) & ~(a - 1);
     }
 
@@ -58,8 +58,10 @@ public:
         if (bytes == 0) return null;
 
         // 根据大小选择对齐策略
-        size_t a = (bytes >= 64) ? 64 : (bytes >= 16) ? 16 : 8;
+        size_t a = (bytes >= (void*).sizeof * 8) ? (void*).sizeof * 8 : (bytes >= (void*).sizeof * 2) ? (void*).sizeof * 2 : (void*).sizeof;
         size_t alignedBytes = (bytes + a - 1) & ~(a - 1);
+
+        
 
         if (alignedBytes <= allocBytesRemain_)
         {
@@ -253,7 +255,7 @@ private:
             }
 
             if (mem.length == 0)
-                assert(0, "Arena::allocate: out of memory");
+                throw new OutOfMemoryError("Arena::allocate: out of memory");
 
             auto block = cast(ubyte[]) mem;
             blocks_ ~= block;
@@ -276,7 +278,7 @@ private:
         }
 
         if (newBlock.length == 0)
-            assert(0, "Arena::allocate: out of memory");
+            throw new OutOfMemoryError("Arena::allocate: out of memory");
 
         auto block = cast(ubyte[]) newBlock;
         blocks_ ~= block;

@@ -15,7 +15,7 @@ uint hash(Slice key, uint seed = 0xbc9f1d34) nothrow @trusted @nogc
 
     // 处理4字节块
     size_t i = 0;
-    for (; i + 4 <= n; i += 4)
+    for (; i + uint.sizeof <= n; i += uint.sizeof)
     {
         uint k = cast(uint) data[i] |
                  (cast(uint) data[i + 1] << 8) |

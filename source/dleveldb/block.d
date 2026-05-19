@@ -24,7 +24,7 @@ public:
     this(Slice data)
     {
         data_ = data;
-        if (data_.size() < 4)
+        if (data_.size() < uint.sizeof)
         {
             numRestarts_ = 0;
             restartsOffset_ = 0;
@@ -32,8 +32,8 @@ public:
         }
 
         // 最后4字节是重启点数量
-        numRestarts_ = cast(int) decodeFixed32(data_.data() + data_.size() - 4);
-        restartsOffset_ = data_.size() - 4 - cast(size_t) numRestarts_ * 4;
+        numRestarts_ = cast(int) decodeFixed32(data_.data() + data_.size() - uint.sizeof);
+        restartsOffset_ = data_.size() - uint.sizeof - cast(size_t) numRestarts_ * uint.sizeof;
 
         if (restartsOffset_ > data_.size())
         {
@@ -56,7 +56,7 @@ public:
     uint restartPoint(int i) const nothrow @nogc
     {
         assert(i >= 0 && i < numRestarts_);
-        return decodeFixed32(data_.data() + restartsOffset_ + i * 4);
+        return decodeFixed32(data_.data() + restartsOffset_ + i * uint.sizeof);
     }
 
     /// 创建块内迭代器

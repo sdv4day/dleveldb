@@ -60,16 +60,16 @@ public:
             filterOffsets_ ~= 0;
 
         size_t oldLen = result_.length;
-        result_.length = oldLen + filterOffsets_.length * 4 + 4 + 1;
+        result_.length = oldLen + filterOffsets_.length * uint.sizeof + uint.sizeof + 1;
 
         ubyte* p = result_.ptr + oldLen;
         foreach (offset; filterOffsets_)
         {
             encodeFixed32(p, offset);
-            p += 4;
+            p += uint.sizeof;
         }
         encodeFixed32(p, cast(uint) filterOffsets_.length);
-        p += 4;
+        p += uint.sizeof;
         *p = cast(ubyte) kFilterBaseLg;
 
         return Slice(result_.ptr, result_.length);
@@ -79,9 +79,9 @@ private:
     /// 为当前键集合生成过滤器
     void generateFilter()
     {
-        if (keys_.length != 0)
+        if (keys_.length == 0)
         {
-            // 空过滤器
+            // 无键需要生成过滤器，记录空偏移
             filterOffsets_ ~= cast(uint) result_.length;
             return;
         }
@@ -113,7 +113,7 @@ public:
         policy_ = policy;
         data_ = data;
 
-        if (data_.size() < 5)
+        if (data_.size() < uint.sizeof + 1)
         {
             num_ = 0;
             baseLg_ = 0;
@@ -125,16 +125,16 @@ public:
         baseLg_ = data_.data()[data_.size() - 1];
 
         // 倒数第5个字节开始是num
-        num_ = decodeFixed32(data_.data() + data_.size() - 5);
+        num_ = decodeFixed32(data_.data() + data_.size() - uint.sizeof - 1);
 
-        if (data_.size() < 5 + num_ * 4)
+        if (data_.size() < uint.sizeof + 1 + num_ * uint.sizeof)
         {
             num_ = 0;
             offsets_ = null;
             return;
         }
 
-        offsets_ = cast(const(uint)*) (data_.data() + data_.size() - 5 - num_ * 4);
+        offsets_ = cast(const(uint)*) (data_.data() + data_.size() - uint.sizeof - 1 - num_ * uint.sizeof);
     }
 
     /// 检查指定数据块中是否可能包含key
@@ -145,7 +145,7 @@ public:
         {
             uint start = offsets_[filterIndex];
             uint end = (filterIndex + 1 < num_) ? offsets_[filterIndex + 1] :
-                cast(uint) (data_.size() - 5 - num_ * 4);
+                cast(uint) (data_.size() - uint.sizeof - 1 - num_ * uint.sizeof);
 
             Slice filter = Slice(data_.data() + start, end - start);
             return policy_.keyMayMatch(key, filter);

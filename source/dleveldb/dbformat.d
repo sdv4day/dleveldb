@@ -16,10 +16,13 @@ enum ValueType : ubyte
 /// 最大序列号（56位）
 enum ulong kMaxSequenceNumber = (1UL << 56) - 1;
 
+/// packed tag 中值类型的位宽
+private enum kTagTypeBits = ubyte.sizeof * 8;
+
 /// 提取packed tag中的序列号
 ulong unpackSequence(ulong packedTag) pure nothrow @safe @nogc
 {
-    return packedTag >> 8;
+    return packedTag >> kTagTypeBits;
 }
 
 /// 提取packed tag中的值类型
@@ -31,7 +34,7 @@ ValueType unpackValueType(ulong packedTag) pure nothrow @safe @nogc
 /// 打包序列号和值类型
 ulong packSequenceAndType(ulong seq, ValueType type) pure nothrow @safe @nogc
 {
-    return (seq << 8) | cast(ulong) type;
+    return (seq << kTagTypeBits) | cast(ulong) type;
 }
 
 /**
@@ -64,18 +67,18 @@ struct InternalKeyComparator
         // 比较内部键：先比较userKey，再比较packedTag（降序）
         size_t aLen = a.size();
         size_t bLen = b.size();
-        assert(aLen >= 8 && bLen >= 8);
+        assert(aLen >= ulong.sizeof && bLen >= ulong.sizeof);
 
         // 比较userKey部分
-        Slice aUserKey = Slice(a.data(), aLen - 8);
-        Slice bUserKey = Slice(b.data(), bLen - 8);
+        Slice aUserKey = Slice(a.data(), aLen - ulong.sizeof);
+        Slice bUserKey = Slice(b.data(), bLen - ulong.sizeof);
         int r = userComparator.compare(aUserKey, bUserKey);
         if (r != 0)
             return r;
 
         // 比较packedTag（降序：数值大的排在前面）
-        ulong aTag = decodeFixed64(a.data() + aLen - 8);
-        ulong bTag = decodeFixed64(b.data() + bLen - 8);
+        ulong aTag = decodeFixed64(a.data() + aLen - ulong.sizeof);
+        ulong bTag = decodeFixed64(b.data() + bLen - ulong.sizeof);
         if (aTag > bTag)
             return -1;
         else if (aTag < bTag)
@@ -111,7 +114,7 @@ struct InternalKey
 
     this(Slice userKey, ulong seq, ValueType type)
     {
-        rep_.length = userKey.size() + 8;
+        rep_.length = userKey.size() + ulong.sizeof;
         // 拷贝userKey
         for (size_t i = 0; i < userKey.size(); i++)
             rep_[i] = userKey.data()[i];
@@ -126,8 +129,8 @@ struct InternalKey
 
     Slice userKey() const nothrow @nogc
     {
-        assert(rep_.length >= 8);
-        return Slice(rep_.ptr, rep_.length - 8);
+        assert(rep_.length >= ulong.sizeof);
+        return Slice(rep_.ptr, rep_.length - ulong.sizeof);
     }
 
     void setFrom(Slice s) nothrow
@@ -138,15 +141,15 @@ struct InternalKey
 
     bool valid() const pure nothrow @safe @nogc
     {
-        return rep_.length >= 8;
+        return rep_.length >= ulong.sizeof;
     }
 
     ParsedInternalKey parse() const nothrow
     {
         assert(valid());
         ParsedInternalKey result;
-        result.userKey = Slice(rep_.ptr, rep_.length - 8);
-        ulong tag = decodeFixed64(rep_.ptr + rep_.length - 8);
+        result.userKey = Slice(rep_.ptr, rep_.length - ulong.sizeof);
+        ulong tag = decodeFixed64(rep_.ptr + rep_.length - ulong.sizeof);
         result.sequence = unpackSequence(tag);
         result.type = unpackValueType(tag);
         return result;
@@ -169,7 +172,7 @@ public:
     this(Slice userKey, ulong sequence)
     {
         // 计算大小
-        size_t internalKeySize = userKey.size() + 8;
+        size_t internalKeySize = userKey.size() + ulong.sizeof;
         int varintLen = varintLength(cast(uint) internalKeySize);
         size_t totalSize = varintLen + internalKeySize;
 
@@ -205,7 +208,7 @@ public:
     /// 用户键部分
     Slice userKey() const nothrow @nogc
     {
-        return Slice(rep_.ptr + kstart_, end_ - kstart_ - 8);
+        return Slice(rep_.ptr + kstart_, end_ - kstart_ - ulong.sizeof);
     }
 }
 
@@ -214,8 +217,8 @@ public:
  */
 Slice extractUserKey(Slice internalKey) pure nothrow @safe @nogc
 {
-    assert(internalKey.size() >= 8);
-    return Slice(internalKey.data(), internalKey.size() - 8);
+    assert(internalKey.size() >= ulong.sizeof);
+    return Slice(internalKey.data(), internalKey.size() - ulong.sizeof);
 }
 
 /**
@@ -223,8 +226,8 @@ Slice extractUserKey(Slice internalKey) pure nothrow @safe @nogc
  */
 ulong extractPackedTag(Slice internalKey) nothrow @trusted @nogc
 {
-    assert(internalKey.size() >= 8);
-    return decodeFixed64(internalKey.data() + internalKey.size() - 8);
+    assert(internalKey.size() >= ulong.sizeof);
+    return decodeFixed64(internalKey.data() + internalKey.size() - ulong.sizeof);
 }
 
 /// 配置常量

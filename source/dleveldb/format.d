@@ -59,7 +59,7 @@ struct Footer
 {
     // 魔数：0xdb4775248b80fb57
     enum ulong kTableMagicNumber = 0xdb4775248b80fb57UL;
-    enum int kEncodedLength = 2 * BlockHandle.kMaxEncodedLength + 8;
+    enum int kEncodedLength = 2 * BlockHandle.kMaxEncodedLength + ulong.sizeof;
 
     BlockHandle metaindexHandle;
     BlockHandle indexHandle;
@@ -74,13 +74,13 @@ struct Footer
         indexHandle.encodeTo(dst);
 
         // 填充到kEncodedLength - 8
-        size_t paddingLen = start + kEncodedLength - 8 - dst.length;
+        size_t paddingLen = start + kEncodedLength - ulong.sizeof - dst.length;
         dst.length = dst.length + paddingLen;
         // padding已经是0
 
         // 写入魔数
         dst.length = start + kEncodedLength;
-        encodeFixed64(dst.ptr + dst.length - 8, kTableMagicNumber);
+        encodeFixed64(dst.ptr + dst.length - ulong.sizeof, kTableMagicNumber);
     }
 
     /// 从Slice解码
@@ -90,12 +90,12 @@ struct Footer
             return statusCorruption("footer too small");
 
         // 检查魔数
-        ulong magic = decodeFixed64(input.data() + input.size() - 8);
+        ulong magic = decodeFixed64(input.data() + input.size() - ulong.sizeof);
         if (magic != kTableMagicNumber)
             return statusCorruption("footer magic mismatch");
 
         // 解码metaindex_handle和index_handle
-        Slice buf = Slice(input.data() + input.size() - kEncodedLength, kEncodedLength - 8);
+        Slice buf = Slice(input.data() + input.size() - kEncodedLength, kEncodedLength - ulong.sizeof);
 
         Status s = metaindexHandle.decodeFrom(buf);
         if (!s.ok())
@@ -139,7 +139,7 @@ Status readBlock(RandomAccessFile file, ulong fileSize, BlockHandle handle, ref 
         return statusCorruption("block extends past end of file");
 
     // 读取块数据 + trailer(5字节)
-    size_t n = cast(size_t) handle.size_ + 5; // type(1) + crc(4)
+    size_t n = cast(size_t) handle.size_ + 1 + uint.sizeof; // type(1) + crc(4)
     ubyte[] buf;
     buf.length = n;
 
@@ -152,9 +152,9 @@ Status readBlock(RandomAccessFile file, ulong fileSize, BlockHandle handle, ref 
         return statusCorruption("truncated block read");
 
     // 检查CRC
-    ubyte type = data.data()[n - 5];
-    uint expectedCrc = decodeFixed32(data.data() + n - 4);
-    uint actualCrc = crc32cValue(data.data(), n - 5);
+    ubyte type = data.data()[n - 1 - uint.sizeof];
+    uint expectedCrc = decodeFixed32(data.data() + n - uint.sizeof);
+    uint actualCrc = crc32cValue(data.data(), n - 1 - uint.sizeof);
     if (actualCrc != expectedCrc)
         return statusCorruption("block checksum mismatch");
 
