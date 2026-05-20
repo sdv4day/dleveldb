@@ -6,7 +6,7 @@ import dleveldb.env;
 
 import std.format : format;
 import std.conv : to;
-import std.path : buildPath;
+import std.path : buildPath, baseName;
 
 /**
  * 文件命名规则
@@ -23,25 +23,25 @@ import std.path : buildPath;
 /// 构建日志文件名
 string logFileName(string dbname, ulong number)
 {
-    return format("%s/%06d.log", dbname, number);
+    return buildPath(dbname, format("%06d.log", number));
 }
 
 /// 构建SSTable文件名
 string tableFileName(string dbname, ulong number)
 {
-    return format("%s/%06d.ldb", dbname, number);
+    return buildPath(dbname, format("%06d.ldb", number));
 }
 
 /// 构建SSTable文件名（.sst后缀）
 string sstTableFileName(string dbname, ulong number)
 {
-    return format("%s/%06d.sst", dbname, number);
+    return buildPath(dbname, format("%06d.sst", number));
 }
 
 /// 构建描述文件名
 string descriptorFileName(string dbname, ulong number)
 {
-    return format("%s/MANIFEST-%06d", dbname, number);
+    return buildPath(dbname, format("MANIFEST-%06d", number));
 }
 
 /// 构建当前文件名
@@ -71,7 +71,7 @@ string oldInfoLogFileName(string dbname)
 /// 构建临时文件名
 string tempFileName(string dbname, ulong number)
 {
-    return format("%s/%06d.dbtmp", dbname, number);
+    return buildPath(dbname, format("%06d.dbtmp", number));
 }
 
 /**
@@ -80,11 +80,7 @@ string tempFileName(string dbname, ulong number)
 bool parseFileName(string fname, ref ulong number, ref FileType type)
 {
     // 去除目录前缀
-    size_t pos = fname.lastIndexOf('/');
-    if (pos != size_t.max)
-    {
-        fname = fname[pos + 1 .. $];
-    }
+    fname = baseName(fname);
 
     // 尝试解析各种文件类型
     if (fname == "CURRENT")

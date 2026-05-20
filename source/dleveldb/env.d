@@ -101,225 +101,13 @@ interface Env
     Status newLogger(string fname, out Logger result);
 }
 
+// ===== Cross-platform File I/O =====
+// 这些类使用 std.stdio.File，在所有平台上均能正常工作
+
 /**
- * Posix环境实现
+ * 跨平台顺序读取文件
  */
-class PosixEnv : Env
-{
-private:
-    import core.sync.mutex;
-    Mutex mutex_;
-    TaskPool bgPool_;       /// 延迟初始化：首次调用 schedule() 时创建
-
-public:
-    this()
-    {
-        mutex_ = new Mutex;
-    }
-
-    Status newSequentialFile(string fname, out SequentialFile result)
-    {
-        import std.stdio : File;
-        try
-        {
-            result = new PosixSequentialFile(fname);
-            return Status();
-        }
-        catch (Exception e)
-        {
-            return statusIoError("open " ~ fname ~ ": " ~ e.msg);
-        }
-    }
-
-    Status newRandomAccessFile(string fname, out RandomAccessFile result)
-    {
-        try
-        {
-            result = new PosixRandomAccessFile(fname);
-            return Status();
-        }
-        catch (Exception e)
-        {
-            return statusIoError("open " ~ fname ~ ": " ~ e.msg);
-        }
-    }
-
-    Status newWritableFile(string fname, out WritableFile result)
-    {
-        try
-        {
-            result = new PosixWritableFile(fname);
-            return Status();
-        }
-        catch (Exception e)
-        {
-            return statusIoError("open " ~ fname ~ ": " ~ e.msg);
-        }
-    }
-
-    Status newAppendableFile(string fname, out WritableFile result)
-    {
-        return newWritableFile(fname, result);
-    }
-
-    bool fileExists(string fname) const
-    {
-        import std.file : exists;
-        return exists(fname);
-    }
-
-    Status getChildren(string dir, out string[] result)
-    {
-        import std.file : dirEntries, SpanMode;
-        try
-        {
-            result = [];
-            foreach (de; dirEntries(dir, SpanMode.shallow))
-            {
-                import std.path : baseName;
-                result ~= de.name.baseName;
-            }
-            return Status();
-        }
-        catch (Exception e)
-        {
-            return statusIoError("dir " ~ dir ~ ": " ~ e.msg);
-        }
-    }
-
-    Status removeFile(string fname)
-    {
-        import std.file : remove;
-        try
-        {
-            remove(fname);
-            return Status();
-        }
-        catch (Exception e)
-        {
-            return statusIoError("remove " ~ fname ~ ": " ~ e.msg);
-        }
-    }
-
-    Status createDir(string dir)
-    {
-        import std.file : mkdirRecurse;
-        try
-        {
-            mkdirRecurse(dir);
-            return Status();
-        }
-        catch (Exception e)
-        {
-            return statusIoError("mkdir " ~ dir ~ ": " ~ e.msg);
-        }
-    }
-
-    Status removeDir(string dir)
-    {
-        import std.file : rmdir;
-        try
-        {
-            rmdir(dir);
-            return Status();
-        }
-        catch (Exception e)
-        {
-            return statusIoError("rmdir " ~ dir ~ ": " ~ e.msg);
-        }
-    }
-
-    Status getFileSize(string fname, out ulong size)
-    {
-        import std.file : getSize;
-        try
-        {
-            size = getSize(fname);
-            return Status();
-        }
-        catch (Exception e)
-        {
-            return statusIoError("stat " ~ fname ~ ": " ~ e.msg);
-        }
-    }
-
-    Status renameFile(string src, string dst)
-    {
-        import std.file : rename;
-        try
-        {
-            rename(src, dst);
-            return Status();
-        }
-        catch (Exception e)
-        {
-            return statusIoError("rename " ~ src ~ " -> " ~ dst ~ ": " ~ e.msg);
-        }
-    }
-
-    Status lockFile(string fname, out FileLock lock)
-    {
-        lock = new PosixFileLock(fname);
-        return Status();
-    }
-
-    Status unlockFile(FileLock lock)
-    {
-        // lock 参数由接口约束，unlock 在简化实现中为空操作
-        return Status();
-    }
-
-    void schedule(void delegate() fn)
-    {
-        // 延迟初始化 TaskPool：不在 shared static this() 中创建，
-        // 避免 D 运行时初始化期间的线程创建死锁。
-        if (bgPool_ is null)
-        {
-            synchronized (mutex_)
-            {
-                if (bgPool_ is null)
-                {
-                    auto pool = new TaskPool(1);
-                    pool.isDaemon = true;   // 守护线程，不阻止进程退出
-                    bgPool_ = pool;
-                }
-            }
-        }
-        // 使用 TaskPool 复用后台线程，避免每次创建新 OS 线程
-        bgPool_.put(task(fn));
-    }
-
-    void startThread(void delegate() fn)
-    {
-        // startThread 语义为创建独立线程，不使用共享线程池
-        task(fn).executeInNewThread();
-    }
-
-    ulong nowMicros() const
-    {
-        import std.datetime : Clock;
-        import core.time : usecs;
-        auto now = Clock.currTime();
-        return cast(ulong) (now.toUnixTime() * 1_000_000L
-            + now.fracSecs.total!"usecs");
-    }
-
-    void sleepForMicroseconds(int micros)
-    {
-        import core.thread : Thread;
-        import core.time : dur;
-        Thread.sleep(dur!"usecs"(micros));
-    }
-
-    Status newLogger(string fname, out Logger result)
-    {
-        result = new PosixLogger(fname);
-        return Status();
-    }
-}
-
-/// Posix顺序读取文件
-class PosixSequentialFile : SequentialFile
+class FileSequentialFile : SequentialFile
 {
 private:
     import std.stdio : File;
@@ -365,8 +153,10 @@ public:
     }
 }
 
-/// Posix随机读取文件
-class PosixRandomAccessFile : RandomAccessFile
+/**
+ * 跨平台随机读取文件（线程安全）
+ */
+class FileRandomAccessFile : RandomAccessFile
 {
 private:
     string filename_;
@@ -391,7 +181,7 @@ public:
 
     Status read(ulong offset, size_t n, ref Slice result, ubyte[] scratch) const
     {
-        auto self = cast(PosixRandomAccessFile) this;
+        auto self = cast(FileRandomAccessFile) this;
         synchronized (self.mutex_)
         {
             try
@@ -409,8 +199,10 @@ public:
     }
 }
 
-/// Posix可写文件
-class PosixWritableFile : WritableFile
+/**
+ * 跨平台可写文件
+ */
+class FileWritableFile : WritableFile
 {
 private:
     import std.stdio : File;
@@ -490,6 +282,12 @@ public:
             try
             {
                 file_.flush();
+                version (Windows)
+                {
+                    // Windows: 调用 _commit 将缓冲数据刷新到磁盘
+                    extern(C) int _commit(int);
+                    _commit(file_.fileno());
+                }
                 return Status();
             }
             catch (Exception e)
@@ -500,15 +298,10 @@ public:
     }
 }
 
-/// Posix文件锁
-class PosixFileLock : FileLock
-{
-    string filename_;
-    this(string fname) { filename_ = fname; }
-}
-
-/// Posix日志
-class PosixLogger : Logger
+/**
+ * 跨平台日志
+ */
+class FileLogger : Logger
 {
 private:
     import std.stdio : File;
@@ -536,16 +329,539 @@ public:
     }
 }
 
-/// 全局默认环境实例
-__gshared PosixEnv posixEnv_;
+// ===== Platform-Specific Environment =====
 
-shared static this()
+version (Windows)
 {
-    posixEnv_ = new PosixEnv();
+    import core.sys.windows.windows;
+
+    /**
+     * Windows文件锁
+     * 使用 LockFileEx / UnlockFileEx 实现真正的文件锁定
+     */
+    class WindowsFileLock : FileLock
+    {
+        HANDLE hFile_;
+
+        this(HANDLE h)
+        {
+            hFile_ = h;
+        }
+
+        ~this()
+        {
+            if (hFile_ != INVALID_HANDLE_VALUE)
+                CloseHandle(hFile_);
+        }
+    }
+
+    /**
+     * Windows环境实现
+     */
+    class WindowsEnv : Env
+    {
+    private:
+        Mutex mutex_;
+        TaskPool bgPool_;
+
+    public:
+        this()
+        {
+            mutex_ = new Mutex;
+        }
+
+        Status newSequentialFile(string fname, out SequentialFile result)
+        {
+            import std.stdio : File;
+            try
+            {
+                result = new FileSequentialFile(fname);
+                return Status();
+            }
+            catch (Exception e)
+            {
+                return statusIoError("open " ~ fname ~ ": " ~ e.msg);
+            }
+        }
+
+        Status newRandomAccessFile(string fname, out RandomAccessFile result)
+        {
+            try
+            {
+                result = new FileRandomAccessFile(fname);
+                return Status();
+            }
+            catch (Exception e)
+            {
+                return statusIoError("open " ~ fname ~ ": " ~ e.msg);
+            }
+        }
+
+        Status newWritableFile(string fname, out WritableFile result)
+        {
+            try
+            {
+                result = new FileWritableFile(fname);
+                return Status();
+            }
+            catch (Exception e)
+            {
+                return statusIoError("open " ~ fname ~ ": " ~ e.msg);
+            }
+        }
+
+        Status newAppendableFile(string fname, out WritableFile result)
+        {
+            return newWritableFile(fname, result);
+        }
+
+        bool fileExists(string fname) const
+        {
+            import std.file : exists;
+            return exists(fname);
+        }
+
+        Status getChildren(string dir, out string[] result)
+        {
+            import std.file : dirEntries, SpanMode;
+            try
+            {
+                result = [];
+                foreach (de; dirEntries(dir, SpanMode.shallow))
+                {
+                    import std.path : baseName;
+                    result ~= de.name.baseName;
+                }
+                return Status();
+            }
+            catch (Exception e)
+            {
+                return statusIoError("dir " ~ dir ~ ": " ~ e.msg);
+            }
+        }
+
+        Status removeFile(string fname)
+        {
+            import std.file : remove;
+            try
+            {
+                remove(fname);
+                return Status();
+            }
+            catch (Exception e)
+            {
+                return statusIoError("remove " ~ fname ~ ": " ~ e.msg);
+            }
+        }
+
+        Status createDir(string dir)
+        {
+            import std.file : mkdirRecurse;
+            try
+            {
+                mkdirRecurse(dir);
+                return Status();
+            }
+            catch (Exception e)
+            {
+                return statusIoError("mkdir " ~ dir ~ ": " ~ e.msg);
+            }
+        }
+
+        Status removeDir(string dir)
+        {
+            import std.file : rmdir;
+            try
+            {
+                rmdir(dir);
+                return Status();
+            }
+            catch (Exception e)
+            {
+                return statusIoError("rmdir " ~ dir ~ ": " ~ e.msg);
+            }
+        }
+
+        Status getFileSize(string fname, out ulong size)
+        {
+            import std.file : getSize;
+            try
+            {
+                size = getSize(fname);
+                return Status();
+            }
+            catch (Exception e)
+            {
+                return statusIoError("stat " ~ fname ~ ": " ~ e.msg);
+            }
+        }
+
+        Status renameFile(string src, string dst)
+        {
+            import std.file : rename;
+            try
+            {
+                rename(src, dst);
+                return Status();
+            }
+            catch (Exception e)
+            {
+                return statusIoError("rename " ~ src ~ " -> " ~ dst ~ ": " ~ e.msg);
+            }
+        }
+
+        Status lockFile(string fname, out FileLock lock)
+        {
+            import std.utf : toUTF16z;
+            import std.conv : to;
+
+            HANDLE h = CreateFileW(
+                toUTF16z(fname),
+                GENERIC_READ,
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                null,
+                OPEN_ALWAYS,
+                FILE_ATTRIBUTE_NORMAL,
+                null
+            );
+            if (h == INVALID_HANDLE_VALUE)
+                return statusIoError("lock " ~ fname ~ ": CreateFile failed");
+
+            OVERLAPPED ov;
+            ov.Offset = 0;
+            ov.OffsetHigh = 0;
+            ov.hEvent = null;
+            ov.Internal = 0;
+            ov.InternalHigh = 0;
+
+            if (!LockFileEx(h, LOCKFILE_EXCLUSIVE_LOCK, 0, 1, 0, &ov))
+            {
+                DWORD err = GetLastError();
+                CloseHandle(h);
+                return statusIoError("lock " ~ fname ~ ": LockFileEx failed (error " ~ to!string(err) ~ ")");
+            }
+
+            lock = new WindowsFileLock(h);
+            return Status();
+        }
+
+        Status unlockFile(FileLock lock)
+        {
+            auto wlock = cast(WindowsFileLock) lock;
+            if (wlock is null || wlock.hFile_ == INVALID_HANDLE_VALUE)
+                return Status();
+
+            OVERLAPPED ov;
+            ov.Offset = 0;
+            ov.OffsetHigh = 0;
+            ov.hEvent = null;
+            ov.Internal = 0;
+            ov.InternalHigh = 0;
+
+            UnlockFileEx(wlock.hFile_, 0, 1, 0, &ov);
+            CloseHandle(wlock.hFile_);
+            wlock.hFile_ = INVALID_HANDLE_VALUE;
+            return Status();
+        }
+
+        void schedule(void delegate() fn)
+        {
+            if (bgPool_ is null)
+            {
+                synchronized (mutex_)
+                {
+                    if (bgPool_ is null)
+                    {
+                        auto pool = new TaskPool(1);
+                        pool.isDaemon = true;
+                        bgPool_ = pool;
+                    }
+                }
+            }
+            bgPool_.put(task(fn));
+        }
+
+        void startThread(void delegate() fn)
+        {
+            task(fn).executeInNewThread();
+        }
+
+        ulong nowMicros() const
+        {
+            import std.datetime : Clock;
+            import core.time : usecs;
+            auto now = Clock.currTime();
+            return cast(ulong) (now.toUnixTime() * 1_000_000L
+                + now.fracSecs.total!"usecs");
+        }
+
+        void sleepForMicroseconds(int micros)
+        {
+            import core.thread : Thread;
+            import core.time : dur;
+            Thread.sleep(dur!"usecs"(micros));
+        }
+
+        Status newLogger(string fname, out Logger result)
+        {
+            result = new FileLogger(fname);
+            return Status();
+        }
+    }
+
+    /// 全局默认 Windows 环境实例
+    __gshared WindowsEnv windowsEnv_;
+
+    shared static this()
+    {
+        windowsEnv_ = new WindowsEnv();
+    }
+
+    /// 获取默认环境
+    Env defaultEnv() nothrow @nogc
+    {
+        return windowsEnv_;
+    }
 }
-
-/// 获取默认环境
-Env defaultEnv() nothrow @nogc
+else
 {
-    return posixEnv_;
+    /**
+     * Posix文件锁
+     */
+    class PosixFileLock : FileLock
+    {
+        string filename_;
+        this(string fname) { filename_ = fname; }
+    }
+
+    /**
+     * Posix环境实现
+     */
+    class PosixEnv : Env
+    {
+    private:
+        import core.sync.mutex;
+        Mutex mutex_;
+        TaskPool bgPool_;       /// 延迟初始化：首次调用 schedule() 时创建
+
+    public:
+        this()
+        {
+            mutex_ = new Mutex;
+        }
+
+        Status newSequentialFile(string fname, out SequentialFile result)
+        {
+            import std.stdio : File;
+            try
+            {
+                result = new FileSequentialFile(fname);
+                return Status();
+            }
+            catch (Exception e)
+            {
+                return statusIoError("open " ~ fname ~ ": " ~ e.msg);
+            }
+        }
+
+        Status newRandomAccessFile(string fname, out RandomAccessFile result)
+        {
+            try
+            {
+                result = new FileRandomAccessFile(fname);
+                return Status();
+            }
+            catch (Exception e)
+            {
+                return statusIoError("open " ~ fname ~ ": " ~ e.msg);
+            }
+        }
+
+        Status newWritableFile(string fname, out WritableFile result)
+        {
+            try
+            {
+                result = new FileWritableFile(fname);
+                return Status();
+            }
+            catch (Exception e)
+            {
+                return statusIoError("open " ~ fname ~ ": " ~ e.msg);
+            }
+        }
+
+        Status newAppendableFile(string fname, out WritableFile result)
+        {
+            return newWritableFile(fname, result);
+        }
+
+        bool fileExists(string fname) const
+        {
+            import std.file : exists;
+            return exists(fname);
+        }
+
+        Status getChildren(string dir, out string[] result)
+        {
+            import std.file : dirEntries, SpanMode;
+            try
+            {
+                result = [];
+                foreach (de; dirEntries(dir, SpanMode.shallow))
+                {
+                    import std.path : baseName;
+                    result ~= de.name.baseName;
+                }
+                return Status();
+            }
+            catch (Exception e)
+            {
+                return statusIoError("dir " ~ dir ~ ": " ~ e.msg);
+            }
+        }
+
+        Status removeFile(string fname)
+        {
+            import std.file : remove;
+            try
+            {
+                remove(fname);
+                return Status();
+            }
+            catch (Exception e)
+            {
+                return statusIoError("remove " ~ fname ~ ": " ~ e.msg);
+            }
+        }
+
+        Status createDir(string dir)
+        {
+            import std.file : mkdirRecurse;
+            try
+            {
+                mkdirRecurse(dir);
+                return Status();
+            }
+            catch (Exception e)
+            {
+                return statusIoError("mkdir " ~ dir ~ ": " ~ e.msg);
+            }
+        }
+
+        Status removeDir(string dir)
+        {
+            import std.file : rmdir;
+            try
+            {
+                rmdir(dir);
+                return Status();
+            }
+            catch (Exception e)
+            {
+                return statusIoError("rmdir " ~ dir ~ ": " ~ e.msg);
+            }
+        }
+
+        Status getFileSize(string fname, out ulong size)
+        {
+            import std.file : getSize;
+            try
+            {
+                size = getSize(fname);
+                return Status();
+            }
+            catch (Exception e)
+            {
+                return statusIoError("stat " ~ fname ~ ": " ~ e.msg);
+            }
+        }
+
+        Status renameFile(string src, string dst)
+        {
+            import std.file : rename;
+            try
+            {
+                rename(src, dst);
+                return Status();
+            }
+            catch (Exception e)
+            {
+                return statusIoError("rename " ~ src ~ " -> " ~ dst ~ ": " ~ e.msg);
+            }
+        }
+
+        Status lockFile(string fname, out FileLock lock)
+        {
+            lock = new PosixFileLock(fname);
+            return Status();
+        }
+
+        Status unlockFile(FileLock lock)
+        {
+            // lock 参数由接口约束，unlock 在简化实现中为空操作
+            return Status();
+        }
+
+        void schedule(void delegate() fn)
+        {
+            // 延迟初始化 TaskPool：不在 shared static this() 中创建，
+            // 避免 D 运行时初始化期间的线程创建死锁。
+            if (bgPool_ is null)
+            {
+                synchronized (mutex_)
+                {
+                    if (bgPool_ is null)
+                    {
+                        auto pool = new TaskPool(1);
+                        pool.isDaemon = true;   // 守护线程，不阻止进程退出
+                        bgPool_ = pool;
+                    }
+                }
+            }
+            // 使用 TaskPool 复用后台线程，避免每次创建新 OS 线程
+            bgPool_.put(task(fn));
+        }
+
+        void startThread(void delegate() fn)
+        {
+            // startThread 语义为创建独立线程，不使用共享线程池
+            task(fn).executeInNewThread();
+        }
+
+        ulong nowMicros() const
+        {
+            import std.datetime : Clock;
+            import core.time : usecs;
+            auto now = Clock.currTime();
+            return cast(ulong) (now.toUnixTime() * 1_000_000L
+                + now.fracSecs.total!"usecs");
+        }
+
+        void sleepForMicroseconds(int micros)
+        {
+            import core.thread : Thread;
+            import core.time : dur;
+            Thread.sleep(dur!"usecs"(micros));
+        }
+
+        Status newLogger(string fname, out Logger result)
+        {
+            result = new FileLogger(fname);
+            return Status();
+        }
+    }
+
+    /// 全局默认 Posix 环境实例
+    __gshared PosixEnv posixEnv_;
+
+    shared static this()
+    {
+        posixEnv_ = new PosixEnv();
+    }
+
+    /// 获取默认环境
+    Env defaultEnv() nothrow @nogc
+    {
+        return posixEnv_;
+    }
 }
