@@ -252,8 +252,9 @@ public:
                     file_.flush();
                     version (Windows)
                     {
-                        extern (C) nothrow @nogc int _commit(int fd);
-                        _commit(cast(int) file_.fileno());
+                        import core.sys.windows.winbase : FlushFileBuffers;
+                        import core.stdc.stdio : _get_osfhandle;
+                        FlushFileBuffers(cast(void*) _get_osfhandle(cast(int) file_.fileno()));
                     }
                     file_.close();
                 }
@@ -292,10 +293,10 @@ public:
                 file_.flush();
                 version (Windows)
                 {
-                    // Windows: 调用 _commit 将缓冲数据刷新到磁盘
-                    // _commit 是 Windows CRT 函数，接受 int 类型的文件描述符
-                    extern (C) nothrow @nogc int _commit(int fd);
-                    _commit(cast(int) file_.fileno());
+                    // Windows: 调用 FlushFileBuffers 将缓冲数据刷新到磁盘
+                    import core.sys.windows.winbase : FlushFileBuffers;
+                    import core.stdc.stdio : _get_osfhandle;
+                    FlushFileBuffers(cast(void*) _get_osfhandle(cast(int) file_.fileno()));
                 }
                 return Status();
             }
