@@ -20,6 +20,7 @@ import dleveldb.comparator;
 import dleveldb.env;
 import dleveldb.filename;
 import dleveldb.coding;
+import std.path : buildPath;
 import dleveldb.key_filter;
 import dleveldb.compression_filter;
 import dleveldb.builder;
@@ -856,25 +857,25 @@ private:
                 if (type == FileType.table && (number in liveFiles) is null)
                 {
                     // 删除废弃SSTable
-                    env_.removeFile(dbname_ ~ "/" ~ fname);
+                    env_.removeFile(buildPath(dbname_, fname));
                     tableCache_.evict(number);
                 }
                 else if (type == FileType.log && (number in liveFiles) is null &&
                          number < versions_.logNumber())
                 {
                     // 删除旧WAL日志
-                    env_.removeFile(dbname_ ~ "/" ~ fname);
+                    env_.removeFile(buildPath(dbname_, fname));
                 }
                 else if (type == FileType.descriptor && (number in liveFiles) is null &&
                          number != versions_.manifestFileNumber())
                 {
                     // 删除旧MANIFEST
-                    env_.removeFile(dbname_ ~ "/" ~ fname);
+                    env_.removeFile(buildPath(dbname_, fname));
                 }
                 else if (type == FileType.temp)
                 {
                     // 删除临时文件
-                    env_.removeFile(dbname_ ~ "/" ~ fname);
+                    env_.removeFile(buildPath(dbname_, fname));
                 }
             }
         }

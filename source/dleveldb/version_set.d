@@ -14,6 +14,7 @@ import dleveldb.table_cache;
 import dleveldb.iterator;
 import dleveldb.merger;
 import dleveldb.filename;
+import std.path : buildPath;
 
 import core.sync.mutex;
 import core.atomic : atomicFetchAdd, atomicFetchSub;
@@ -368,7 +369,7 @@ public:
                 {
                     // CURRENT文件内容为"MANIFEST-XXXXXX\n"
                     import std.string : strip;
-                    manifestName = dbname_ ~ "/" ~ strip(result.asString().idup);
+                    manifestName = buildPath(dbname_, strip(result.asString().idup));
                     foundManifest = env_.fileExists(manifestName);
                 }
             }

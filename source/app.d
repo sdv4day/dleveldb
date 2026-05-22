@@ -1,13 +1,19 @@
 import std.stdio;
 import std.conv : text;
+import std.file : thisExePath;
+import std.path : dirName, buildPath;
 import core.time : MonoTime;
 import dleveldb.slice : Slice;
 import dleveldb.coding : encodeVarint32, encodeFixed32, encodeFixed64;
 import dleveldb.crc32c : crc32cValue;
 import dleveldb.hash : hash;
 
+/// 可执行文件所在目录，用于构建测试路径
+__gshared string exeDir;
+
 void main()
 {
+    exeDir = thisExePath().dirName;
     writeln("dleveldb - 性能测试");
     writeln("==================");
     writeln();
@@ -148,7 +154,7 @@ void benchDbOperations()
     import std.file : exists, rmdirRecurse;
     import dleveldb;
 
-    string dbPath = "/tmp/dleveldb_bench";
+    string dbPath = buildPath(exeDir, "dleveldb_bench");
     if (exists(dbPath))
         rmdirRecurse(dbPath);
 
@@ -246,7 +252,7 @@ void benchMultiThreaded()
     import std.algorithm : each;
     import dleveldb;
 
-    string dbPath = "/tmp/dleveldb_mt_bench";
+    string dbPath = buildPath(exeDir, "dleveldb_mt_bench");
     if (exists(dbPath))
         rmdirRecurse(dbPath);
 
