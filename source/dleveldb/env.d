@@ -248,7 +248,15 @@ public:
             try
             {
                 if (file_.isOpen())
+                {
+                    file_.flush();
+                    version (Windows)
+                    {
+                        extern (C) nothrow @nogc int _commit(int fd);
+                        _commit(cast(int) file_.fileno());
+                    }
                     file_.close();
+                }
                 closed_ = true;
                 return Status();
             }
