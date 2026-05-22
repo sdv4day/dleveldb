@@ -151,12 +151,10 @@ void main()
 /// DB操作性能测试
 void benchDbOperations()
 {
-    import std.file : exists, rmdirRecurse;
     import dleveldb;
 
     string dbPath = buildPath(exeDir, "dleveldb_bench");
-    if (exists(dbPath))
-        rmdirRecurse(dbPath);
+    safeRmdirRecurse(dbPath);
 
     auto options = Options();
     options.createIfMissing = true;
@@ -237,14 +235,12 @@ void benchDbOperations()
     writeln("DB操作性能测试完成.");
 
     // 清理测试目录
-    if (exists(dbPath))
-        rmdirRecurse(dbPath);
+    safeRmdirRecurse(dbPath);
 }
 
 /// 多线程并发性能测试
 void benchMultiThreaded()
 {
-    import std.file : exists, rmdirRecurse;
     import std.parallelism : task, TaskPool;
     import core.thread : Thread;
     import core.time : msecs;
@@ -253,8 +249,7 @@ void benchMultiThreaded()
     import dleveldb;
 
     string dbPath = buildPath(exeDir, "dleveldb_mt_bench");
-    if (exists(dbPath))
-        rmdirRecurse(dbPath);
+    safeRmdirRecurse(dbPath);
 
     auto options = Options();
     options.createIfMissing = true;
@@ -262,8 +257,7 @@ void benchMultiThreaded()
     scope(exit)
     {
         db.close();
-        if (exists(dbPath))
-            rmdirRecurse(dbPath);
+        safeRmdirRecurse(dbPath);
     }
 
     // 准备测试数据
@@ -476,4 +470,34 @@ void benchMultiThreaded()
 
     writeln();
     writeln("多线程并发性能测试完成.");
+}
+
+/// 安全删除目录（Windows上文件锁可能有短暂延迟，自动重试）
+void safeRmdirRecurse(string path)
+{
+    import std.file : exists, rmdirRecurse;
+    import core.thread : Thread;
+    import core.time : dur;
+
+    if (!exists(path))
+        return;
+
+    for (int attempt; attempt < 5; attempt++)
+    {
+        try
+        {
+            rmdirRecurse(path);
+            return;
+        }
+        catch (Exception e)
+        {
+            if (attempt >= 4)
+            {
+                writeln("清理目录失败（重试已耗尽）: ", e.msg);
+                return;
+            }
+            writeln("清理目录重试 #", attempt + 1, ": ", e.msg);
+            Thread.sleep(dur!"msecs"(200));
+        }
+    }
 }
