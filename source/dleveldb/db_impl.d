@@ -211,6 +211,20 @@ public:
         }
 
         log_ = null;
+
+        // 释放版本集资源（关闭MANIFEST文件句柄）
+        if (versions_ !is null)
+        {
+            versions_.closeResources();
+            versions_ = null;
+        }
+
+        // 释放TableCache（关闭缓存的SSTable文件句柄）
+        tableCache_ = null;
+
+        // 强制GC回收，确保析构函数关闭所有文件句柄
+        import core.memory : GC;
+        GC.collect();
     }
 
     /// 写入键值对

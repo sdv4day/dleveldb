@@ -663,6 +663,18 @@ private:
 
         return s;
     }
+
+public:
+    /// 释放资源（关闭MANIFEST文件句柄）
+    void closeResources()
+    {
+        descriptorLog_ = null;
+        if (descriptorFile_ !is null)
+        {
+            descriptorFile_.close();
+            descriptorFile_ = null;
+        }
+    }
 }
 
 /**
