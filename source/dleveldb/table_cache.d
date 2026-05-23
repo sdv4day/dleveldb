@@ -31,6 +31,7 @@ private:
     Table[ulong] tables_;
     ulong[] order_;
     Mutex mutex_;
+    bool closed_;
 
 public:
     this(string dbname, Options options, int maxOpenFiles)
@@ -40,11 +41,32 @@ public:
         env_ = options.env;
         maxOpenFiles_ = maxOpenFiles;
         mutex_ = new Mutex;
+        closed_ = false;
     }
 
     ~this()
     {
-        // Table对象由GC回收，文件句柄在析构中关闭
+        close();
+    }
+
+    /// 显式关闭所有缓存的Table，释放文件句柄
+    void close()
+    {
+        if (closed_) return;
+        closed_ = true;
+
+        synchronized (mutex_)
+        {
+            foreach (key, table; tables_)
+            {
+                if (table !is null)
+                {
+                    table.close();
+                }
+            }
+            tables_.destroy();
+            order_ = null;
+        }
     }
 
     /// 在指定表中查找

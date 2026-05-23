@@ -15,6 +15,13 @@ import dleveldb.db_impl : DbIteratorWithRefs;
 
 import std.file : exists, rmdirRecurse;
 import std.format : format;
+import std.path : buildPath;
+
+private string makeTempPath(string sub)
+{
+    import std.file : tempDir;
+    return buildPath(tempDir().idup, "dleveldb_test", sub);
+}
 
 /**
  * 双库交叉验证：写入后读取对比
@@ -24,8 +31,8 @@ void testDualDbPutGet()
     import std.stdio : writeln;
     writeln("  [双库测试] 顺序写入/读取交叉对比...");
 
-    string pathA = "test_dual_a";
-    string pathB = "test_dual_b";
+    string pathA = makeTempPath("dual_a");
+    string pathB = makeTempPath("dual_b");
 
     if (pathA.exists) pathA.rmdirRecurse();
     if (pathB.exists) pathB.rmdirRecurse();
@@ -89,8 +96,8 @@ void testDualDbDelete()
     import std.stdio : writeln;
     writeln("  [双库测试] 删除后读取交叉对比...");
 
-    string pathA = "test_dual_del_a";
-    string pathB = "test_dual_del_b";
+    string pathA = makeTempPath("dual_del_a");
+    string pathB = makeTempPath("dual_del_b");
 
     if (pathA.exists) pathA.rmdirRecurse();
     if (pathB.exists) pathB.rmdirRecurse();
@@ -153,8 +160,8 @@ void testDualDbOverwrite()
     import std.stdio : writeln;
     writeln("  [双库测试] 覆盖写入交叉对比...");
 
-    string pathA = "test_dual_ow_a";
-    string pathB = "test_dual_ow_b";
+    string pathA = makeTempPath("dual_ow_a");
+    string pathB = makeTempPath("dual_ow_b");
 
     if (pathA.exists) pathA.rmdirRecurse();
     if (pathB.exists) pathB.rmdirRecurse();
@@ -210,8 +217,8 @@ void testDualDbBatchWrite()
     import std.stdio : writeln;
     writeln("  [双库测试] 批量写入交叉对比...");
 
-    string pathA = "test_dual_batch_a";
-    string pathB = "test_dual_batch_b";
+    string pathA = makeTempPath("dual_batch_a");
+    string pathB = makeTempPath("dual_batch_b");
 
     if (pathA.exists) pathA.rmdirRecurse();
     if (pathB.exists) pathB.rmdirRecurse();
@@ -267,8 +274,8 @@ void testDualDbNotFound()
     import std.stdio : writeln;
     writeln("  [双库测试] 不存在的键交叉对比...");
 
-    string pathA = "test_dual_nf_a";
-    string pathB = "test_dual_nf_b";
+    string pathA = makeTempPath("dual_nf_a");
+    string pathB = makeTempPath("dual_nf_b");
 
     if (pathA.exists) pathA.rmdirRecurse();
     if (pathB.exists) pathB.rmdirRecurse();
@@ -308,8 +315,8 @@ void testDualDbIterator()
     import std.stdio : writeln;
     writeln("  [双库测试] 迭代器遍历交叉对比...");
 
-    string pathA = "test_dual_iter_a";
-    string pathB = "test_dual_iter_b";
+    string pathA = makeTempPath("dual_iter_a");
+    string pathB = makeTempPath("dual_iter_b");
 
     if (pathA.exists) pathA.rmdirRecurse();
     if (pathB.exists) pathB.rmdirRecurse();
@@ -369,8 +376,8 @@ void testDualDbCrossReadWrite()
     import std.stdio : writeln;
     writeln("  [双库测试] 交叉读写验证...");
 
-    string pathA = "test_dual_crw_a";
-    string pathB = "test_dual_crw_b";
+    string pathA = makeTempPath("dual_crw_a");
+    string pathB = makeTempPath("dual_crw_b");
 
     if (pathA.exists) pathA.rmdirRecurse();
     if (pathB.exists) pathB.rmdirRecurse();
@@ -420,7 +427,6 @@ void runDualDbTests()
     writeln("====== 双库交叉验证测试 (dleveldb x 2 实例) ======");
 
     import core.exception : AssertError;
-    import std.conv : to;
 
     auto runTest(string name, void function() test) {
         try {

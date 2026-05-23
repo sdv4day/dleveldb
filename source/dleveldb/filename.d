@@ -180,7 +180,8 @@ unittest
     import std.algorithm.searching : startsWith, endsWith;
 
     // 文件名构造
-    string db = "/tmp/testdb";
+    import std.file : tempDir;
+    string db = tempDir().idup;
     assert(logFileName(db, 1).endsWith(".log"));
     assert(tableFileName(db, 2).endsWith(".ldb"));
     assert(sstTableFileName(db, 3).endsWith(".sst"));

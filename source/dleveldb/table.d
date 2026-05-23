@@ -24,6 +24,7 @@ private:
     Block indexBlock_;
     FilterBlockReader filterBlock_;
     ulong tableNumber_;
+    bool closed_;
 
 public:
     this(Options options, RandomAccessFile file, ulong fileSize, ulong tableNumber)
@@ -32,10 +33,32 @@ public:
         file_ = file;
         fileSize_ = fileSize;
         tableNumber_ = tableNumber;
+        closed_ = false;
     }
 
     ~this()
     {
+        close();
+    }
+
+    /// 显式释放资源（关闭文件句柄）
+    void close()
+    {
+        if (closed_) return;
+        closed_ = true;
+
+        if (file_ !is null)
+        {
+            auto fraf = cast(FileRandomAccessFile) file_;
+            if (fraf !is null)
+            {
+                import dleveldb.env : FileRandomAccessFile;
+                destroy(fraf);
+            }
+            file_ = null;
+        }
+        indexBlock_ = null;
+        filterBlock_ = null;
     }
 
     /// 打开SSTable

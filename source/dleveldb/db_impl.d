@@ -222,13 +222,11 @@ public:
         }
 
         // 释放TableCache（关闭缓存的SSTable文件句柄）
-        tableCache_ = null;
-
-        // 触发一次GC回收，确保析构函数关闭所有文件句柄
-        // 注意：manual refcounting 对象（Version）已在 destroy() 中正确处理，
-        // 因此不会出现 GC 终结顺序导致的断言失败
-        import core.memory : GC;
-        GC.collect();
+        if (tableCache_ !is null)
+        {
+            tableCache_.close();
+            tableCache_ = null;
+        }
     }
 
     /// 写入键值对
