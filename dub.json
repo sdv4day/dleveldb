@@ -32,22 +32,38 @@
 	"configurations": [
 		{
 			"excludedSourceFiles": [
-				"source/app.d"
+				"source/app.d",
+				"source/dual_test_app.d",
+				"source/dleveldb/dual_db_test.d"
 			],
 			"targetType": "library",
 			"name": "library"
 		},
 		{
 			"excludedSourceFiles": [
-				"source/app.d"
+				"source/app.d",
+				"source/dual_test_app.d",
+				"source/dleveldb/dual_db_test.d"
 			],
 			"targetType": "library",
 			"name": "unittest"
 		},
 		{
 			"mainSourceFile": "source/app.d",
+			"excludedSourceFiles": [
+				"source/dual_test_app.d",
+				"source/dleveldb/dual_db_test.d"
+			],
 			"targetType": "executable",
 			"name": "benchmark"
+		},
+		{
+			"mainSourceFile": "source/dual_test_app.d",
+			"excludedSourceFiles": [
+				"source/app.d"
+			],
+			"targetType": "executable",
+			"name": "dual_test"
 		}
 	]
 }

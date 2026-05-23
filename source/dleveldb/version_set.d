@@ -57,10 +57,9 @@ public:
 
     ~this()
     {
-        assert(refs_ == 0);
-        // 从链表中移除
-        prev_.next_ = next_;
-        next_.prev_ = prev_;
+        // GC回收时机不可控，不再断言refs_==0，不再操作链表
+        // 链表清理由VersionSet.closeResources()统一处理
+        refs_ = 0;
     }
 
     /// 增加引用（原子操作）
@@ -265,8 +264,7 @@ public:
 
     ~this()
     {
-        current_.unref();
-        // 不删除dummyVersions_，它由链表管理
+        // closeResources()已在DBImpl.close()中先调用，此处不再操作
     }
 
     /// 获取当前版本
@@ -674,6 +672,28 @@ public:
             descriptorFile_.close();
             descriptorFile_ = null;
         }
+
+        // 显式断开整个Version链表，防止GC按不确定顺序回收时访问无效链表节点
+        if (dummyVersions_ !is null)
+        {
+            Version v = dummyVersions_.next_;
+            while (v !is dummyVersions_)
+            {
+                Version next = v.next_;
+                v.next_ = v;
+                v.prev_ = v;
+                v = next;
+            }
+            dummyVersions_.next_ = dummyVersions_;
+            dummyVersions_.prev_ = dummyVersions_;
+        }
+
+        // 释放current_引用
+        if (current_ !is null && current_ !is dummyVersions_)
+        {
+            current_.unref();
+        }
+        current_ = null;
     }
 }
 

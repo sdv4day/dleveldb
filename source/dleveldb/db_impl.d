@@ -928,7 +928,24 @@ public:
 
     ~this()
     {
-        if (!released_)
+        if (!released_ && db_ !is null)
+        {
+            try
+            {
+                db_.releaseIteratorRefs(mem_, imm_, version_);
+            }
+            catch (Throwable)
+            {
+                // db_可能已被销毁，忽略异常
+            }
+            released_ = true;
+        }
+    }
+
+    /// 显式释放迭代器引用（在close前调用，避免GC回收时访问已销毁的db_）
+    void release()
+    {
+        if (!released_ && db_ !is null)
         {
             db_.releaseIteratorRefs(mem_, imm_, version_);
             released_ = true;
