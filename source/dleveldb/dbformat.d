@@ -102,6 +102,38 @@ struct InternalKeyComparator
             return 1;
         return 0;
     }
+
+    /// 查找短分隔符（用于SSTable索引块）
+    void findShortestSeparator(ref Slice start, Slice limit) const
+    {
+        size_t startLen = start.size();
+        size_t limitLen = limit.size();
+        assert(startLen >= ulong.sizeof && limitLen >= ulong.sizeof);
+
+        Slice userStart = Slice(start.data(), startLen - ulong.sizeof);
+        Slice userLimit = Slice(limit.data(), limitLen - ulong.sizeof);
+        userComparator.findShortestSeparator(userStart, userLimit);
+
+        if (userStart.size() < startLen - ulong.sizeof)
+        {
+            start = userStart;
+        }
+    }
+
+    /// 查找短后继键（用于SSTable索引块）
+    void findShortSuccessor(ref Slice key) const
+    {
+        size_t keyLen = key.size();
+        assert(keyLen >= ulong.sizeof);
+
+        Slice userKey = Slice(key.data(), keyLen - ulong.sizeof);
+        userComparator.findShortSuccessor(userKey);
+
+        if (userKey.size() < keyLen - ulong.sizeof)
+        {
+            key = userKey;
+        }
+    }
 }
 
 /**

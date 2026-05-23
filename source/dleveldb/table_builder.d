@@ -9,6 +9,7 @@ import dleveldb.filter_block;
 import dleveldb.coding;
 import dleveldb.crc32c;
 import dleveldb.comparator;
+import dleveldb.dbformat;
 import dleveldb.compression;
 import dleveldb.env;
 
@@ -38,14 +39,17 @@ private:
     bool pendingIndexEntry_;  // 是否有待写入的索引条目
     BlockHandle pendingHandle_; // 上一个数据块的句柄
 
+    InternalKeyComparator icmp_; // 内部键比较器（用于有序性校验）
+
     // 压缩输出缓冲区
     ubyte[] compressedOutput_;
 
 public:
-    this(Options options, WritableFile file)
+    this(Options options, WritableFile file, InternalKeyComparator icmp)
     {
         options_ = options;
         file_ = file;
+        icmp_ = icmp;
         offset_ = 0;
         numEntries_ = 0;
         closed_ = false;
@@ -76,7 +80,7 @@ public:
 
         if (numEntries_ > 0)
         {
-            assert(options_.comparator.compare(key, lastKey_) > 0);
+            assert(icmp_.compare(key, lastKey_) > 0);
         }
 
         if (pendingIndexEntry_)
@@ -248,11 +252,11 @@ private:
         Slice separator = lastKey;
         if (nextKey.size() > 0)
         {
-            options_.comparator.findShortestSeparator(separator, nextKey);
+            icmp_.findShortestSeparator(separator, nextKey);
         }
         else
         {
-            options_.comparator.findShortSuccessor(separator);
+            icmp_.findShortSuccessor(separator);
         }
 
         // 编码BlockHandle

@@ -719,7 +719,7 @@ private:
         if (!s.ok())
             return s;
 
-        auto builder = new TableBuilder(options_, outputFile);
+        auto builder = new TableBuilder(options_, outputFile, icmp_);
         FileMetaData metaData;
 
         // 逐键处理

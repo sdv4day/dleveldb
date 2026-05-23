@@ -36,10 +36,11 @@ Status buildTable(string dbname, Env env, Options options,
     if (!s.ok())
         return s;
 
-    // 构建SSTable
-    auto builder = new TableBuilder(options, file);
+    // 构建SSTable（使用内部键比较器确保有序性）
+    auto icmp = InternalKeyComparator(options.comparator);
+    auto builder = new TableBuilder(options, file, icmp);
 
-    metaData.smallest = InternalKey(iter.key(), 0, ValueType.value);
+    metaData.smallest = InternalKey(extractUserKey(iter.key()), 0, ValueType.value);
     while (iter.valid())
     {
         Slice key = iter.key();
@@ -63,7 +64,7 @@ Status buildTable(string dbname, Env env, Options options,
         }
 
         builder.add(key, value);
-        metaData.largest = InternalKey(key, 0, ValueType.value);
+        metaData.largest = InternalKey(extractUserKey(key), 0, ValueType.value);
         iter.next();
     }
 

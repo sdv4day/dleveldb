@@ -11,6 +11,13 @@ import dleveldb.hash : hash;
 /// 可执行文件所在目录，用于构建测试路径
 __gshared string exeDir;
 
+shared static this()
+{
+    import core.sys.windows.windows;
+    SetConsoleOutputCP(65001);
+    SetConsoleCP(65001);    
+}
+
 void main()
 {
     exeDir = thisExePath().dirName;

@@ -625,6 +625,7 @@ version (Windows)
     shared static this()
     {
         windowsEnv_ = new WindowsEnv();
+
     }
 
     /// 获取默认环境
