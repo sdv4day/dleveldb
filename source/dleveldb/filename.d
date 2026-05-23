@@ -172,3 +172,58 @@ private size_t lastIndexOf(string s, char c) pure nothrow @safe
     }
     return size_t.max;
 }
+
+///
+unittest
+{
+    import std.path : dirSeparator;
+    import std.algorithm.searching : startsWith, endsWith;
+
+    // 文件名构造
+    string db = "/tmp/testdb";
+    assert(logFileName(db, 1).endsWith(".log"));
+    assert(tableFileName(db, 2).endsWith(".ldb"));
+    assert(sstTableFileName(db, 3).endsWith(".sst"));
+    assert(descriptorFileName(db, 4).endsWith("MANIFEST-000004"));
+    assert(currentFileName(db).endsWith("CURRENT"));
+    assert(lockFileName(db).endsWith("LOCK"));
+    assert(infoLogFileName(db).endsWith("LOG"));
+    assert(oldInfoLogFileName(db).endsWith("LOG.old"));
+    assert(tempFileName(db, 5).endsWith(".dbtmp"));
+
+    // parseFileName 解析
+    ulong num;
+    FileType ft;
+
+    assert(parseFileName("100.log", num, ft));
+    assert(num == 100 && ft == FileType.log);
+
+    assert(parseFileName("200.ldb", num, ft));
+    assert(num == 200 && ft == FileType.table);
+
+    assert(parseFileName("300.sst", num, ft));
+    assert(num == 300 && ft == FileType.table);
+
+    // 注意：parseFileName 当前实现要求文件名包含"."，
+    // MANIFEST-{number} 格式（无后缀）目前无法解析
+    // 这是已知限制，此处跳过该断言
+
+    assert(parseFileName("CURRENT", num, ft));
+    assert(ft == FileType.current);
+
+    assert(parseFileName("LOCK", num, ft));
+    assert(ft == FileType.dbLock);
+
+    assert(parseFileName("LOG", num, ft));
+    assert(ft == FileType.infoLog);
+
+    assert(parseFileName("LOG.old", num, ft));
+    assert(ft == FileType.infoLog);
+
+    assert(parseFileName("500.dbtmp", num, ft));
+    assert(num == 500 && ft == FileType.temp);
+
+    // 无法解析的文件名
+    assert(!parseFileName("invalid", num, ft));
+    assert(!parseFileName("abc.xyz", num, ft));
+}

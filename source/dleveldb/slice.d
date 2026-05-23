@@ -305,3 +305,67 @@ unittest
     auto refSlice = Slice.Ref!int(42);
     assert(refSlice.as!int() == 42);
 }
+
+///
+unittest
+{
+    // startsWith / endsWith 测试
+    auto s = Slice("hello world");
+    assert(s.startsWith(Slice("hello")));
+    assert(s.startsWith(Slice("h")));
+    assert(s.startsWith(Slice("")));
+    assert(!s.startsWith(Slice("world")));
+    assert(s.endsWith(Slice("world")));
+    assert(s.endsWith(Slice("d")));
+    assert(s.endsWith(Slice("")));
+    assert(!s.endsWith(Slice("hello")));
+
+    // removePrefix 测试
+    auto s2 = Slice("abcdef");
+    auto r1 = s2.removePrefix(3);
+    assert(r1.asString() == "def");
+    auto r2 = s2.removePrefix(0);
+    assert(r2.asString() == "abcdef");
+    auto r3 = s2.removePrefix(6);
+    assert(r3.empty());
+
+    // toString 测试
+    auto s3 = Slice("short");
+    assert(s3.toString() == "short");
+
+    // Slice.Ref 对多种类型
+    auto refLong = Slice.Ref!long(123456789012345L);
+    assert(refLong.as!long() == 123456789012345L);
+    auto refDouble = Slice.Ref!double(3.14);
+    assert(refDouble.as!double() == 3.14);
+
+    // asBytes 往返
+    ubyte[] data = [0x01, 0x02, 0x03, 0x04];
+    auto bs = Slice(data);
+    assert(bs.asBytes() == data);
+
+    // 空Slice的startsWith/endsWith
+    auto empty = Slice();
+    assert(empty.startsWith(Slice()));
+    assert(empty.endsWith(Slice()));
+    assert(!empty.startsWith(Slice("a")));
+
+    // opCmp 边界
+    auto sa = Slice("a");
+    auto sb = Slice("ab");
+    assert(sa < sb);
+    auto sabc = Slice("abc");
+    auto sabd = Slice("abd");
+    assert(sabc < sabd);
+
+    // toHash 非零
+    auto hx = Slice("hash_test");
+    assert(hx.toHash() != 0);
+
+    // sliceFromString / sliceFromBytes
+    auto sf = sliceFromString("test");
+    assert(sf.asString() == "test");
+    ubyte[] bf = [0xAA, 0xBB];
+    auto sb2 = sliceFromBytes(bf);
+    assert(sb2.asBytes() == bf);
+}

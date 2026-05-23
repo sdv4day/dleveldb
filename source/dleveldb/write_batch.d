@@ -200,3 +200,70 @@ Status insertIntoMemTable(WriteBatch batch, MemTable mem)
     auto inserter = new MemTableInserter(batch.sequence(), mem);
     return batch.iterate(inserter);
 }
+
+///
+unittest
+{
+    // 空 WriteBatch
+    auto batch = new WriteBatch();
+    assert(batch.count() == 0);
+    assert(batch.sequence() == 0);
+
+    // 添加 Put 操作
+    batch.put(Slice("key1"), Slice("value1"));
+    assert(batch.count() == 1);
+    batch.put(Slice("key2"), Slice("value2"));
+    assert(batch.count() == 2);
+
+    // 添加 Delete 操作
+    batch.delete_(Slice("key3"));
+    assert(batch.count() == 3);
+
+    // 设置序列号
+    batch.setSequence(100);
+    assert(batch.sequence() == 100);
+
+    // iterate 回调验证
+    class TestHandler : WriteBatchHandler
+    {
+        int putCount = 0;
+        int delCount = 0;
+        string lastPutKey;
+        string lastPutValue;
+        string lastDelKey;
+
+        void put(Slice key, Slice value)
+        {
+            putCount++;
+            lastPutKey = key.asString().idup;
+            lastPutValue = value.asString().idup;
+        }
+
+        void delete_(Slice key)
+        {
+            delCount++;
+            lastDelKey = key.asString().idup;
+        }
+    }
+
+    auto handler = new TestHandler();
+    auto status = batch.iterate(handler);
+    assert(status.ok());
+    assert(handler.putCount == 2);
+    assert(handler.delCount == 1);
+    assert(handler.lastDelKey == "key3");
+
+    // clear
+    batch.clear();
+    assert(batch.count() == 0);
+    assert(batch.sequence() == 0);
+
+    // append
+    auto b1 = new WriteBatch();
+    b1.put(Slice("a"), Slice("1"));
+    auto b2 = new WriteBatch();
+    b2.put(Slice("b"), Slice("2"));
+    b2.delete_(Slice("c"));
+    b1.append(b2);
+    assert(b1.count() == 3);
+}

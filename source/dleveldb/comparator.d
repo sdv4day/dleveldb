@@ -85,3 +85,36 @@ Comparator defaultComparator() nothrow @nogc
 {
     return bytewiseComparator_;
 }
+
+///
+unittest
+{
+    auto cmp = defaultComparator();
+
+    // 名称
+    assert(cmp.name() == "dleveldb.BytewiseComparator");
+
+    // 基本比较
+    assert(cmp.compare(Slice("a"), Slice("b")) < 0);
+    assert(cmp.compare(Slice("b"), Slice("a")) > 0);
+    assert(cmp.compare(Slice("abc"), Slice("abc")) == 0);
+
+    // 前缀比较
+    assert(cmp.compare(Slice("a"), Slice("ab")) < 0);
+    assert(cmp.compare(Slice("ab"), Slice("abc")) < 0);
+
+    // 空Slice比较
+    assert(cmp.compare(Slice(""), Slice("")) == 0);
+    assert(cmp.compare(Slice(""), Slice("a")) < 0);
+
+    // 字节序比较
+    assert(cmp.compare(Slice("\x00"), Slice("\x01")) < 0);
+    assert(cmp.compare(Slice("\xFF"), Slice("\x00")) > 0);
+
+    // findShortestSeparator / findShortSuccessor 不崩溃
+    Slice start = Slice("abc");
+    Slice limit = Slice("abd");
+    cmp.findShortestSeparator(start, limit);
+    Slice key = Slice("abc");
+    cmp.findShortSuccessor(key);
+}

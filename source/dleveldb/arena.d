@@ -290,3 +290,62 @@ private:
         return result[0 .. originalBytes];
     }
 }
+
+///
+unittest
+{
+    import std.experimental.allocator : IAllocator;
+
+    auto arena = new Arena();
+
+    // 基本分配
+    auto mem1 = arena.allocate(100);
+    assert(mem1.ptr !is null);
+    assert(mem1.length == 100);
+
+    // 分配零字节
+    auto mem0 = arena.allocate(0);
+    assert(mem0 is null);
+
+    // 多次分配
+    auto mem2 = arena.allocate(200);
+    auto mem3 = arena.allocate(300);
+    assert(mem2.ptr !is null);
+    assert(mem3.ptr !is null);
+    assert(mem2.length == 200);
+    assert(mem3.length == 300);
+
+    // allocatePtr
+    auto ptr1 = arena.allocatePtr(64);
+    assert(ptr1 !is null);
+
+    // memoryUsage 随分配增长
+    auto usageBefore = arena.memoryUsage();
+    arena.allocate(500);
+    auto usageAfter = arena.memoryUsage();
+    assert(usageAfter >= usageBefore);
+
+    // owns 检查
+    import std.typecons : Ternary;
+    assert(arena.owns(mem1) == Ternary.yes);
+    void[] foreign;
+    assert(arena.owns(foreign) == Ternary.no);
+
+    // deallocateAll
+    assert(arena.deallocateAll());
+
+    // empty
+    assert(arena.empty() == Ternary.yes);
+    arena.allocate(10);
+    assert(arena.empty() == Ternary.no);
+
+    // 大块分配（超过kBlockSize/4）
+    auto bigMem = arena.allocate(4096);
+    assert(bigMem.ptr !is null);
+    assert(bigMem.length == 4096);
+
+    // 新 Arena 测试 allocateAlignedPtr
+    auto arena2 = new Arena();
+    auto aptr = arena2.allocateAlignedPtr(32);
+    assert(aptr !is null);
+}

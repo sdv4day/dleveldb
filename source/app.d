@@ -167,7 +167,7 @@ void benchDbOperations()
     options.createIfMissing = true;
 
     auto db = new LevelDB(options, dbPath);
-    writeln("数据库已打开");
+    writefln("数据库已打开[%s]",dbPath);
 
     // 顺序写
     {

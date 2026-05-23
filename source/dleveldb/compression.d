@@ -104,3 +104,35 @@ Compressor newCompressor(CompressionType type)
             return new NoneCompressor(); // 降级为无压缩
     }
 }
+
+///
+unittest
+{
+    // CompressionType 枚举值
+    assert(CompressionType.none == 0);
+    assert(CompressionType.snappy == 1);
+    assert(CompressionType.zstd == 2);
+
+    // NoneCompressor
+    auto nc = new NoneCompressor();
+    assert(nc.type() == CompressionType.none);
+    assert(nc.compress(Slice("test")) is null); // 无压缩返回null
+
+    // decompress 拷贝数据
+    ubyte[] input = [0x01, 0x02, 0x03];
+    ubyte[] output;
+    auto status = nc.decompress(Slice(input), output);
+    assert(status.ok());
+    assert(output.length == 3);
+    assert(output[0] == 0x01 && output[1] == 0x02 && output[2] == 0x03);
+
+    // newCompressor 各类型
+    auto c1 = newCompressor(CompressionType.none);
+    assert(c1.type() == CompressionType.none);
+
+    // snappy/zstd 降级为 none（无对应库时）
+    auto c2 = newCompressor(CompressionType.snappy);
+    assert(c2.type() == CompressionType.none);
+    auto c3 = newCompressor(CompressionType.zstd);
+    assert(c3.type() == CompressionType.none);
+}

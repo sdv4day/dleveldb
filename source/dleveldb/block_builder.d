@@ -140,3 +140,45 @@ public:
         return Slice(buffer_.ptr, buffer_.length);
     }
 }
+
+///
+unittest
+{
+    // 空 BlockBuilder
+    auto bb = BlockBuilder(16);
+    assert(bb.empty());
+
+    // 添加单个键值对
+    bb.add(Slice("key1"), Slice("val1"));
+    assert(!bb.empty());
+    assert(bb.estimatedSize() > 0);
+
+    // 添加多个键值对（有前缀共享）
+    bb.add(Slice("key2"), Slice("val2"));
+    bb.add(Slice("key3"), Slice("val3"));
+
+    // finish
+    auto result = bb.finish();
+    assert(result.size() > 0);
+
+    // 估算大小与实际大小关系
+    auto bb2 = BlockBuilder(16);
+    bb2.add(Slice("abc"), Slice("x"));
+    auto est = bb2.estimatedSize();
+    auto fin = bb2.finish();
+    assert(fin.size() >= est - uint.sizeof - uint.sizeof); // 允许尾部差异
+
+    // 无前缀共享的键
+    auto bb3 = BlockBuilder(1); // restartInterval=1，每个键都是重启点
+    bb3.add(Slice("alpha"), Slice("1"));
+    bb3.add(Slice("beta"), Slice("2"));
+    bb3.add(Slice("gamma"), Slice("3"));
+    auto r3 = bb3.finish();
+    assert(r3.size() > 0);
+
+    // reset
+    auto bb4 = BlockBuilder(16);
+    bb4.add(Slice("k"), Slice("v"));
+    bb4.reset();
+    assert(bb4.empty());
+}

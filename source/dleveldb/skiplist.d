@@ -348,3 +348,68 @@ public:
             node_ = null;
     }
 }
+
+///
+unittest
+{
+    import dleveldb.arena;
+    import dleveldb.slice;
+
+    // Slice比较器用于SkipList
+    struct SliceComparator
+    {
+        int compare(Slice a, Slice b) const nothrow @nogc
+        {
+            return a.opCmp(b);
+        }
+    }
+
+    auto arena = new Arena();
+    auto cmp = SliceComparator();
+    SkipList!(Slice, SliceComparator) list;
+    list.initialize(cast(IAllocator) arena, cmp);
+
+    // 空表
+    assert(list.empty());
+
+    // 插入
+    list.insert(Slice("b"));
+    assert(!list.empty());
+    assert(list.contains(Slice("b")));
+    assert(!list.contains(Slice("a")));
+    assert(!list.contains(Slice("c")));
+
+    list.insert(Slice("a"));
+    list.insert(Slice("c"));
+    assert(list.contains(Slice("a")));
+    assert(list.contains(Slice("c")));
+
+    // 迭代器
+    auto iter = list.iterator();
+    iter.seekToFirst();
+    assert(iter.valid());
+    assert(iter.key() == Slice("a"));
+    iter.next();
+    assert(iter.key() == Slice("b"));
+    iter.next();
+    assert(iter.key() == Slice("c"));
+    iter.next();
+    assert(!iter.valid());
+
+    // seek
+    iter.seek(Slice("b"));
+    assert(iter.valid());
+    assert(iter.key() == Slice("b"));
+
+    // seekToLast
+    iter.seekToLast();
+    assert(iter.valid());
+    assert(iter.key() == Slice("c"));
+
+    // prev
+    iter.prev();
+    assert(iter.key() == Slice("b"));
+
+    // getMaxHeight
+    assert(list.getMaxHeight() >= 1);
+}

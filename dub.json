@@ -1,39 +1,53 @@
 {
-	"description": "A LevelDB-compatible key-value storage engine written in D",
-	"license": "BSL-1.0",
 	"authors": [
 		"sdv"
 	],
+	"license": "BSL-1.0",
 	"copyright": "Copyright © 2026, sdv",
 	"name": "dleveldb",
-	"targetType": "library",
-	"sourcePaths": ["source"],
+	"sourcePaths": [
+		"source"
+	],
+	"description": "A LevelDB-compatible key-value storage engine written in D",
 	"dependencies": {
-		"cachetools": "~>1.0.1"
+		"cachetools": "~>1.0.1",
+		"silly": "~>1.1.1"
+	},
+	"targetType": "library",
+	"buildTypes": {
+		"debug": {
+			"buildOptions": [
+				"debugMode",
+				"debugInfo"
+			]
+		},
+		"debug-profile": {
+			"buildOptions": [
+				"debugMode",
+				"debugInfo",
+				"profile"
+			]
+		}
 	},
 	"configurations": [
 		{
-			"name": "library",
+			"excludedSourceFiles": [
+				"source/app.d"
+			],
 			"targetType": "library",
-			"excludedSourceFiles": ["source/app.d"]
+			"name": "library"
 		},
 		{
-			"name": "unittest",
+			"excludedSourceFiles": [
+				"source/app.d"
+			],
 			"targetType": "library",
-			"excludedSourceFiles": ["source/app.d"]
+			"name": "unittest"
 		},
 		{
-			"name": "benchmark",
+			"mainSourceFile": "source/app.d",
 			"targetType": "executable",
-			"mainSourceFile": "source/app.d"
+			"name": "benchmark"
 		}
-	],
-    "buildTypes": {
-        "debug": {
-            "buildOptions": ["debugMode", "debugInfo"]
-        },
-        "debug-profile": {
-            "buildOptions": ["debugMode", "debugInfo", "profile"]
-        }
-    }
+	]
 }

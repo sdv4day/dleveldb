@@ -89,3 +89,43 @@ unittest
     auto part2 = crc32cExtend(part1, test2.ptr + 2, 3);
     assert(part2 == full);
 }
+
+///
+unittest
+{
+    // CRC32C 已知值验证（空数据=0）
+    assert(crc32cValue(null, 0) == 0);
+
+    // 单字节
+    ubyte[1] oneByte = [0x00];
+    auto h1 = crc32cValue(oneByte.ptr, 1);
+    assert(h1 != 0);
+
+    // 相同数据产生相同CRC
+    ubyte[] a = [1, 2, 3, 4, 5];
+    ubyte[] b = [1, 2, 3, 4, 5];
+    assert(crc32cValue(a.ptr, a.length) == crc32cValue(b.ptr, b.length));
+
+    // 不同数据产生不同CRC（大概率）
+    ubyte[] c = [5, 4, 3, 2, 1];
+    auto crcA = crc32cValue(a.ptr, a.length);
+    auto crcC = crc32cValue(c.ptr, c.length);
+    // 注意：特定数据可能CRC碰巧相同，仅验证不崩溃
+
+    // crc32cSlice 与 crc32cValue 一致
+    ubyte[] d = [0x41, 0x42, 0x43];
+    assert(crc32cSlice(d) == crc32cValue(d.ptr, d.length));
+
+    // 分块计算：三块
+    ubyte[] data = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    auto fullCrc = crc32cValue(data.ptr, data.length);
+    auto p1 = crc32cExtend(0, data.ptr, 3);
+    auto p2 = crc32cExtend(p1, data.ptr + 3, 4);
+    auto p3 = crc32cExtend(p2, data.ptr + 7, 3);
+    assert(p3 == fullCrc);
+
+    // CRC32C 幂等性：对相同数据多次计算结果一致
+    auto v1 = crc32cValue(data.ptr, data.length);
+    auto v2 = crc32cValue(data.ptr, data.length);
+    assert(v1 == v2);
+}

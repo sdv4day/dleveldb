@@ -236,3 +236,84 @@ unittest
     assert(getLengthPrefixedSlice(ptr, ptr + data.length, result));
     assert(result.asString() == "Hello");
 }
+
+///
+unittest
+{
+    // varintLength 测试
+    assert(varintLength(0) == 1);
+    assert(varintLength(127) == 1);
+    assert(varintLength(128) == 2);
+    assert(varintLength(16383) == 2);
+    assert(varintLength(16384) == 3);
+
+    // varintLength64 测试
+    assert(varintLength64(0) == 1);
+    assert(varintLength64(127) == 1);
+    assert(varintLength64(128) == 2);
+    assert(varintLength64(ulong.max) == 10);
+
+    // encodeFixed32 字节序验证（小端序）
+    ubyte[4] buf32;
+    encodeFixed32(buf32.ptr, 1);
+    assert(buf32[0] == 1 && buf32[1] == 0 && buf32[2] == 0 && buf32[3] == 0);
+    encodeFixed32(buf32.ptr, 256);
+    assert(buf32[0] == 0 && buf32[1] == 1 && buf32[2] == 0 && buf32[3] == 0);
+
+    // encodeFixed64 字节序验证（小端序）
+    ubyte[8] buf64;
+    encodeFixed64(buf64.ptr, 1);
+    assert(buf64[0] == 1);
+    encodeFixed64(buf64.ptr, 256);
+    assert(buf64[0] == 0 && buf64[1] == 1);
+
+    // varint32 边界值往返
+    uint[] edgeVals = [1, 127, 128, 255, 256, 0x7FFF, 0x8000, 0xFFFF, 0x10000];
+    ubyte[10] vb;
+    foreach (v; edgeVals)
+    {
+        auto n = encodeVarint32(vb.ptr, v);
+        const(ubyte)* p = vb.ptr;
+        uint decoded;
+        assert(decodeVarint32(p, p + n, decoded));
+        assert(decoded == v);
+    }
+
+    // varint64 边界值往返
+    ulong[] edgeVals64 = [1, 127, 128, 0xFFFF, 0xFFFFFFFF, 0x100000000UL, 0xFFFFFFFFFFFFUL];
+    ubyte[10] vb64;
+    foreach (v; edgeVals64)
+    {
+        auto n = encodeVarint64(vb64.ptr, v);
+        const(ubyte)* p = vb64.ptr;
+        ulong decoded;
+        assert(decodeVarint64(p, p + n, decoded));
+        assert(decoded == v);
+    }
+
+    // decodeVarint32 数据不足返回false
+    ubyte[2] shortBuf = [0x80, 0x80]; // 需要更多字节
+    const(ubyte)* sp = shortBuf.ptr;
+    uint dv;
+    assert(!decodeVarint32(sp, sp + 2, dv));
+
+    // putLengthPrefixedSlice + getLengthPrefixedSlice 往返
+    ubyte[] lpsBuf;
+    putLengthPrefixedSlice(lpsBuf, Slice("key1"));
+    putLengthPrefixedSlice(lpsBuf, Slice("value1"));
+    const(ubyte)* lp = lpsBuf.ptr;
+    const(ubyte)* lpLimit = lp + lpsBuf.length;
+    Slice k, v;
+    assert(getLengthPrefixedSlice(lp, lpLimit, k));
+    assert(getLengthPrefixedSlice(lp, lpLimit, v));
+    assert(k.asString() == "key1");
+    assert(v.asString() == "value1");
+
+    // 长度前缀空Slice
+    ubyte[] emptyBuf;
+    putLengthPrefixedSlice(emptyBuf, Slice());
+    const(ubyte)* ep = emptyBuf.ptr;
+    Slice emptyResult;
+    assert(getLengthPrefixedSlice(ep, ep + emptyBuf.length, emptyResult));
+    assert(emptyResult.empty());
+}

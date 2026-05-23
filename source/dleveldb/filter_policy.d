@@ -135,3 +135,41 @@ FilterPolicy newBloomFilterPolicy(int bitsPerKey = 10)
 {
     return new BloomFilterPolicy(bitsPerKey);
 }
+
+///
+unittest
+{
+    // 布隆过滤器名称
+    auto bf = newBloomFilterPolicy(10);
+    assert(bf.name() == "dleveldb.BloomFilterPolicy");
+
+    // 创建过滤器并查询匹配
+    Slice[] keys = [Slice("hello"), Slice("world"), Slice("test")];
+    ubyte[] filter;
+    bf.createFilter(keys, 3, filter);
+    assert(filter.length > 0);
+
+    // 已存在的键应匹配
+    assert(bf.keyMayMatch(Slice("hello"), Slice(filter)));
+    assert(bf.keyMayMatch(Slice("world"), Slice(filter)));
+    assert(bf.keyMayMatch(Slice("test"), Slice(filter)));
+
+    // 空过滤器不匹配
+    assert(!bf.keyMayMatch(Slice("hello"), Slice()));
+
+    // 单键过滤器
+    Slice[] singleKey = [Slice("abc")];
+    ubyte[] singleFilter;
+    bf.createFilter(singleKey, 1, singleFilter);
+    assert(bf.keyMayMatch(Slice("abc"), Slice(singleFilter)));
+
+    // 不同bitsPerKey
+    auto bf2 = newBloomFilterPolicy(20);
+    assert(bf2.name() == "dleveldb.BloomFilterPolicy");
+    ubyte[] filter2;
+    bf2.createFilter(keys, 3, filter2);
+    assert(bf2.keyMayMatch(Slice("hello"), Slice(filter2)));
+
+    // 过滤器长度>=2
+    assert(singleFilter.length >= 2);
+}

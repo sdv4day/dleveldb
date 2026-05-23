@@ -3,6 +3,7 @@
 	"versions": {
 		"automem": "0.6.11",
 		"cachetools": "1.0.1",
+		"silly": "1.1.1",
 		"test_allocator": "0.3.4",
 		"unit-threaded": "2.2.3"
 	}

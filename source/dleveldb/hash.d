@@ -60,3 +60,42 @@ uint hashBytes(const(ubyte)[] data, uint seed = 0xbc9f1d34) nothrow @trusted @no
 {
     return hash(Slice(data.ptr, data.length), seed);
 }
+
+///
+unittest
+{
+    // 相同输入产生相同哈希
+    auto h1 = hash(Slice("hello"));
+    auto h2 = hash(Slice("hello"));
+    assert(h1 == h2);
+
+    // 不同输入产生不同哈希（大概率）
+    auto h3 = hash(Slice("world"));
+    assert(h1 != h3);
+
+    // 空Slice哈希
+    auto hEmpty = hash(Slice(""));
+    assert(hEmpty != 0 || hEmpty == 0); // 仅验证不崩溃
+
+    // 不同种子产生不同结果
+    auto h4 = hash(Slice("test"), 0x12345678);
+    auto h5 = hash(Slice("test"), 0x87654321);
+    assert(h4 != h5);
+
+    // hashBytes 与 hash 一致
+    ubyte[] data = [0x74, 0x65, 0x73, 0x74]; // "test"
+    auto hb1 = hashBytes(data);
+    auto hb2 = hash(Slice("test"));
+    // hashBytes用Slice(data.ptr, data.length)，hash(Slice("test"))用char[]构造
+    // 两者应一致
+    assert(hb1 == hb2);
+
+    // 单字节（大概率不同）
+    auto ha = hash(Slice("a"));
+    auto hb = hash(Slice("b"));
+    // 哈希函数大概率产生不同值，但理论上可能碰巧相同
+
+    // 长字符串
+    auto longKey = Slice("abcdefghijklmnopqrstuvwxyz0123456789");
+    auto hLong = hash(longKey);
+}

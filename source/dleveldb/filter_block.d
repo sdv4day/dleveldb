@@ -153,3 +153,30 @@ public:
         return true; // 超出范围，保守返回true
     }
 }
+
+///
+unittest
+{
+    // FilterBlockBuilder 基本流程
+    auto policy = newBloomFilterPolicy(10);
+    auto builder = new FilterBlockBuilder(policy);
+
+    builder.startBlock(0);
+    builder.addKey(Slice("foo"));
+    builder.addKey(Slice("bar"));
+    builder.addKey(Slice("box"));
+    builder.startBlock(2048); // 触发过滤器生成
+    auto filterData = builder.finish();
+    assert(filterData.size() > 0);
+
+    // FilterBlockReader 读取
+    auto reader = new FilterBlockReader(policy, filterData);
+
+    // 已添加的键应可能匹配
+    assert(reader.keyMayMatch(0, Slice("foo")));
+    assert(reader.keyMayMatch(0, Slice("bar")));
+    assert(reader.keyMayMatch(0, Slice("box")));
+
+    // 超出范围的块偏移保守返回true
+    assert(reader.keyMayMatch(10000, Slice("foo")));
+}

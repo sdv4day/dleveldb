@@ -1,6 +1,7 @@
 module dleveldb.status;
 
 import dleveldb.slice;
+import std.algorithm.searching : startsWith;
 
 /**
  * 操作结果状态，类似leveldb的Status
@@ -126,4 +127,59 @@ Status statusInvalidArgument(string msg)
 Status statusIoError(string msg)
 {
     return Status(Status.Code.ioError, msg);
+}
+
+///
+unittest
+{
+    // OK状态
+    auto ok = Status();
+    assert(ok.ok());
+    assert(!ok.isNotFound());
+    assert(!ok.isCorruption());
+    assert(!ok.isNotSupported());
+    assert(!ok.isInvalidArgument());
+    assert(!ok.isIoError());
+    assert(ok.toString() == "OK");
+    assert(ok.code() == Status.Code.ok);
+
+    // NotFound状态
+    auto nf = statusNotFound("key not found");
+    assert(!nf.ok());
+    assert(nf.isNotFound());
+    assert(nf.code() == Status.Code.notFound);
+    assert(nf.toString().startsWith("NotFound:"));
+
+    // Corruption状态
+    auto cor = statusCorruption("bad data");
+    assert(!cor.ok());
+    assert(cor.isCorruption());
+    assert(cor.code() == Status.Code.corruption);
+    assert(cor.toString().startsWith("Corruption:"));
+
+    // NotSupported状态
+    auto ns = statusNotSupported("feature");
+    assert(!ns.ok());
+    assert(ns.isNotSupported());
+    assert(ns.code() == Status.Code.notSupported);
+
+    // InvalidArgument状态
+    auto ia = statusInvalidArgument("bad arg");
+    assert(!ia.ok());
+    assert(ia.isInvalidArgument());
+    assert(ia.code() == Status.Code.invalidArgument);
+
+    // IOError状态
+    auto io = statusIoError("disk fail");
+    assert(!io.ok());
+    assert(io.isIoError());
+    assert(io.code() == Status.Code.ioError);
+
+    // statusOk工厂函数
+    auto ok2 = statusOk();
+    assert(ok2.ok());
+
+    // message() 获取错误消息
+    assert(nf.message() !is null);
+    assert(ok.message() is null);
 }

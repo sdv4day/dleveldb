@@ -269,3 +269,73 @@ enum int kL0_SlowdownWritesTrigger = 8;
 enum int kL0_StopWritesTrigger = 12;
 enum int kMaxMemCompactLevel = 2;
 enum size_t kReadBytesPeriod = 1048576; // 1MB
+
+///
+unittest
+{
+    // packSequenceAndType / unpack 往返
+    ulong seq = 100;
+    auto vtype = ValueType.value;
+    auto packed = packSequenceAndType(seq, vtype);
+    assert(unpackSequence(packed) == seq);
+    assert(unpackValueType(packed) == vtype);
+
+    // deletion 类型
+    auto packedDel = packSequenceAndType(200, ValueType.deletion);
+    assert(unpackSequence(packedDel) == 200);
+    assert(unpackValueType(packedDel) == ValueType.deletion);
+
+    // 序列号0
+    auto packed0 = packSequenceAndType(0, ValueType.value);
+    assert(unpackSequence(packed0) == 0);
+
+    // kMaxSequenceNumber
+    auto packedMax = packSequenceAndType(kMaxSequenceNumber, ValueType.value);
+    assert(unpackSequence(packedMax) == kMaxSequenceNumber);
+
+    // InternalKey 构造与解析
+    auto ikey = InternalKey(Slice("hello"), 10, ValueType.value);
+    assert(ikey.valid());
+    assert(ikey.userKey() == Slice("hello"));
+    auto parsed = ikey.parse();
+    assert(parsed.userKey == Slice("hello"));
+    assert(parsed.sequence == 10);
+    assert(parsed.type == ValueType.value);
+
+    // InternalKey 删除标记
+    auto ikeyDel = InternalKey(Slice("del_key"), 20, ValueType.deletion);
+    auto parsedDel = ikeyDel.parse();
+    assert(parsedDel.type == ValueType.deletion);
+    assert(parsedDel.sequence == 20);
+
+    // extractUserKey / extractPackedTag
+    auto encoded = ikey.encode();
+    assert(extractUserKey(encoded) == Slice("hello"));
+    auto tag = extractPackedTag(encoded);
+    assert(unpackSequence(tag) == 10);
+
+    // LookupKey 构造
+    auto lkey = LookupKey(Slice("mykey"), 5);
+    assert(lkey.userKey() == Slice("mykey"));
+
+    // InternalKeyComparator
+    auto icmp = InternalKeyComparator(defaultComparator());
+    auto ik1 = InternalKey(Slice("a"), 1, ValueType.value).encode();
+    auto ik2 = InternalKey(Slice("b"), 1, ValueType.value).encode();
+    assert(icmp.compare(ik1, ik2) < 0);
+    assert(icmp.compare(ik2, ik1) > 0);
+
+    // 相同userKey不同seq：seq大的排在前面（降序）
+    auto ik3 = InternalKey(Slice("a"), 2, ValueType.value).encode();
+    auto ik4 = InternalKey(Slice("a"), 1, ValueType.value).encode();
+    assert(icmp.compare(ik3, ik4) < 0); // seq=2排在seq=1前面
+
+    // ParsedInternalKey debugString
+    auto pik = ParsedInternalKey(Slice("test"), 5, ValueType.value);
+    assert(pik.debugString().length > 0);
+
+    // setFrom
+    auto ikey2 = InternalKey(Slice("x"), 1, ValueType.value);
+    ikey2.setFrom(ikey.encode());
+    assert(ikey2.userKey() == Slice("hello"));
+}

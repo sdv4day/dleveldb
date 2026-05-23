@@ -94,3 +94,45 @@ public:
         }
     }
 }
+
+///
+unittest
+{
+    // 空链表
+    auto list = new SnapshotList();
+    assert(list.empty());
+
+    // 添加快照
+    auto s1 = list.newSnapshot(100);
+    assert(!list.empty());
+    assert(list.oldest() == 100);
+    assert(list.newest() == 100);
+
+    // 添加多个快照
+    auto s2 = list.newSnapshot(200);
+    auto s3 = list.newSnapshot(300);
+    assert(list.oldest() == 100);
+    assert(list.newest() == 300);
+
+    // 快照序列号
+    assert(s1.sequenceNumber() == 100);
+    assert(s2.sequenceNumber() == 200);
+    assert(s3.sequenceNumber() == 300);
+
+    // 删除中间快照
+    list.deleteSnapshot(s2);
+    assert(list.oldest() == 100);
+    assert(list.newest() == 300);
+
+    // 删除最旧快照
+    list.deleteSnapshot(s1);
+    assert(list.oldest() == 300);
+    assert(list.newest() == 300);
+
+    // 删除最新快照
+    list.deleteSnapshot(s3);
+    assert(list.empty());
+
+    // 重复删除不崩溃
+    list.deleteSnapshot(s3);
+}

@@ -135,3 +135,58 @@ Options sanitizeOptions(Options options)
 
     return result;
 }
+
+///
+unittest
+{
+    // 默认选项
+    auto opts = Options();
+    assert(!opts.createIfMissing);
+    assert(!opts.errorIfExists);
+    assert(opts.writeBufferSize == 4 * 1024 * 1024);
+    assert(opts.maxOpenFiles == 1000);
+    assert(opts.blockSize == 4 * 1024);
+    assert(opts.blockRestartInterval == 16);
+    assert(opts.maxFileSize == 2 * 1024 * 1024);
+
+    // sanitizeOptions 填充默认值
+    auto sanitized = sanitizeOptions(Options());
+    assert(sanitized.comparator !is null);
+    assert(sanitized.env !is null);
+    assert(sanitized.filterPolicy !is null);
+    assert(sanitized.keyFilter !is null);
+    assert(sanitized.compressionFilter !is null);
+
+    // sanitizeOptions 校正范围
+    auto badOpts = Options();
+    badOpts.maxOpenFiles = 10;
+    badOpts.writeBufferSize = 1024;
+    badOpts.maxFileSize = 512;
+    badOpts.blockSize = 128;
+    auto fixed = sanitizeOptions(badOpts);
+    assert(fixed.maxOpenFiles >= 74);
+    assert(fixed.writeBufferSize >= 64 * 1024);
+    assert(fixed.maxFileSize >= 1024 * 1024);
+    assert(fixed.blockSize >= 1024);
+
+    // sanitizeOptions 上限
+    auto bigOpts = Options();
+    bigOpts.maxOpenFiles = 100000;
+    bigOpts.writeBufferSize = 10 * 1024 * 1024 * 1024;
+    bigOpts.maxFileSize = 10 * 1024 * 1024 * 1024;
+    bigOpts.blockSize = 10 * 1024 * 1024;
+    auto capped = sanitizeOptions(bigOpts);
+    assert(capped.maxOpenFiles <= 50000);
+    assert(capped.writeBufferSize <= 1024 * 1024 * 1024);
+    assert(capped.maxFileSize <= 1024 * 1024 * 1024);
+    assert(capped.blockSize <= 4 * 1024 * 1024);
+
+    // ReadOptions / WriteOptions 默认值
+    auto ro = ReadOptions();
+    assert(!ro.verifyChecksums);
+    assert(ro.fillCache);
+    assert(ro.snapshot == 0);
+
+    auto wo = WriteOptions();
+    assert(!wo.sync);
+}
