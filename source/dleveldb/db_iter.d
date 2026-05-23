@@ -228,3 +228,153 @@ Iterator newDBIterator(Comparator userCmp, Iterator internalIter, ulong sequence
 {
     return new DBIter(userCmp, internalIter, sequence);
 }
+
+///
+unittest
+{
+    import dleveldb.arena;
+    import dleveldb.memtable;
+    import dleveldb.comparator;
+
+    // ====== DBIter.seek() 测试 ======
+    // DBIter 包装内部键迭代器，处理删除标记和序列号覆盖
+
+    auto icmp = InternalKeyComparator(defaultComparator());
+
+    // --- 测试1: 基本seek定位 ---
+    auto mem1 = new MemTable(icmp);
+    mem1.addRef();
+    mem1.add(1, ValueType.value, Slice("a"), Slice("va"));
+    mem1.add(2, ValueType.value, Slice("b"), Slice("vb"));
+    mem1.add(3, ValueType.value, Slice("c"), Slice("vc"));
+
+    Iterator internal1 = new MemTableIterator(mem1.tablePtr());
+    // sequence=100 允许所有条目
+    auto dbIter1 = new DBIter(defaultComparator(), internal1, 100);
+
+    dbIter1.seek(Slice("b"));
+    assert(dbIter1.valid());
+    assert(dbIter1.key() == Slice("b"));
+    assert(dbIter1.value() == Slice("vb"));
+
+    dbIter1.seek(Slice("a"));
+    assert(dbIter1.valid());
+    assert(dbIter1.key() == Slice("a"));
+
+    dbIter1.seek(Slice("c"));
+    assert(dbIter1.valid());
+    assert(dbIter1.key() == Slice("c"));
+
+    // seek到不存在的键，定位到下一个
+    dbIter1.seek(Slice("b0"));
+    assert(dbIter1.valid());
+    assert(dbIter1.key() == Slice("c"));
+
+    // seek超出范围
+    dbIter1.seek(Slice("z"));
+    assert(!dbIter1.valid());
+
+    // --- 测试2: 删除标记过滤 ---
+    auto mem2 = new MemTable(icmp);
+    mem2.addRef();
+    mem2.add(1, ValueType.value, Slice("a"), Slice("va"));
+    mem2.add(2, ValueType.deletion, Slice("b"), Slice());  // b被删除
+    mem2.add(3, ValueType.value, Slice("c"), Slice("vc"));
+
+    Iterator internal2 = new MemTableIterator(mem2.tablePtr());
+    auto dbIter2 = new DBIter(defaultComparator(), internal2, 100);
+
+    // seek "b" → 被删除，应跳到 "c"
+    dbIter2.seek(Slice("b"));
+    assert(dbIter2.valid());
+    assert(dbIter2.key() == Slice("c"));
+
+    // seek "a" → 正常
+    dbIter2.seek(Slice("a"));
+    assert(dbIter2.valid());
+    assert(dbIter2.key() == Slice("a"));
+
+    // seekToFirst 验证：a可见，b被删，c可见
+    dbIter2.seekToFirst();
+    assert(dbIter2.key() == Slice("a"));
+    dbIter2.next();
+    assert(dbIter2.key() == Slice("c"));
+    dbIter2.next();
+    assert(!dbIter2.valid());
+
+    // --- 测试3: 序列号覆盖（新版本覆盖旧版本） ---
+    auto mem3 = new MemTable(icmp);
+    mem3.addRef();
+    mem3.add(1, ValueType.value, Slice("x"), Slice("old"));  // seq=1 旧值
+    mem3.add(2, ValueType.value, Slice("x"), Slice("new"));  // seq=2 新值
+
+    Iterator internal3 = new MemTableIterator(mem3.tablePtr());
+    auto dbIter3 = new DBIter(defaultComparator(), internal3, 100);
+
+    dbIter3.seek(Slice("x"));
+    assert(dbIter3.valid());
+    assert(dbIter3.key() == Slice("x"));
+    assert(dbIter3.value() == Slice("new"));  // 新版本覆盖旧版本
+
+    // sequence=1 只能看到seq<=1的条目
+    auto mem3b = new MemTable(icmp);
+    mem3b.addRef();
+    mem3b.add(1, ValueType.value, Slice("x"), Slice("old"));
+    mem3b.add(2, ValueType.value, Slice("x"), Slice("new"));
+
+    Iterator internal3b = new MemTableIterator(mem3b.tablePtr());
+    auto dbIter3b = new DBIter(defaultComparator(), internal3b, 1);
+
+    dbIter3b.seek(Slice("x"));
+    assert(dbIter3b.valid());
+    assert(dbIter3b.key() == Slice("x"));
+    assert(dbIter3b.value() == Slice("old"));  // seq=2不可见，只能看到seq=1
+
+    // --- 测试4: 先删后写（同键先deletion后value） ---
+    auto mem4 = new MemTable(icmp);
+    mem4.addRef();
+    mem4.add(1, ValueType.deletion, Slice("k"), Slice());   // seq=1 删除
+    mem4.add(2, ValueType.value, Slice("k"), Slice("val")); // seq=2 重新写入
+
+    Iterator internal4 = new MemTableIterator(mem4.tablePtr());
+    auto dbIter4 = new DBIter(defaultComparator(), internal4, 100);
+
+    dbIter4.seek(Slice("k"));
+    assert(dbIter4.valid());
+    assert(dbIter4.key() == Slice("k"));
+    assert(dbIter4.value() == Slice("val"));  // 新值覆盖删除
+
+    // --- 测试5: seek后next遍历 ---
+    auto mem5 = new MemTable(icmp);
+    mem5.addRef();
+    mem5.add(1, ValueType.value, Slice("a"), Slice("va"));
+    mem5.add(2, ValueType.deletion, Slice("b"), Slice());
+    mem5.add(3, ValueType.value, Slice("c"), Slice("vc"));
+    mem5.add(4, ValueType.value, Slice("d"), Slice("vd"));
+
+    Iterator internal5 = new MemTableIterator(mem5.tablePtr());
+    auto dbIter5 = new DBIter(defaultComparator(), internal5, 100);
+
+    dbIter5.seek(Slice("a"));
+    assert(dbIter5.key() == Slice("a"));
+    dbIter5.next();
+    assert(dbIter5.key() == Slice("c"));  // b被删，跳过
+    dbIter5.next();
+    assert(dbIter5.key() == Slice("d"));
+    dbIter5.next();
+    assert(!dbIter5.valid());
+
+    // --- 测试6: 全部被删除 ---
+    auto mem6 = new MemTable(icmp);
+    mem6.addRef();
+    mem6.add(1, ValueType.deletion, Slice("only"), Slice());
+
+    Iterator internal6 = new MemTableIterator(mem6.tablePtr());
+    auto dbIter6 = new DBIter(defaultComparator(), internal6, 100);
+
+    dbIter6.seek(Slice("only"));
+    assert(!dbIter6.valid());
+
+    dbIter6.seekToFirst();
+    assert(!dbIter6.valid());
+}

@@ -25,7 +25,7 @@ public:
     this(int restartInterval)
     {
         restartInterval_ = restartInterval;
-        restarts_ = [];
+        restarts_ = [0];  // 第一个条目（偏移0）总是重启点
         counter_ = 0;
         finished_ = false;
     }

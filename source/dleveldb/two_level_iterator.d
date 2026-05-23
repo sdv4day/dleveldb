@@ -160,3 +160,151 @@ Iterator newTwoLevelIterator(Iterator indexIter, Iterator delegate(Slice) blockF
 {
     return new TwoLevelIterator(indexIter, blockFunc);
 }
+
+/// 简单向量迭代器，用于测试
+class VectorIter : Iterator
+{
+private:
+    Slice[] keys_;
+    Slice[] values_;
+    int pos_;
+    Status status_;
+
+public:
+    this(Slice[] keys, Slice[] values)
+    {
+        keys_ = keys;
+        values_ = values;
+        pos_ = -1;
+    }
+
+    bool valid() const nothrow @nogc { return pos_ >= 0 && pos_ < cast(int) keys_.length; }
+
+    void seekToFirst() nothrow @nogc { pos_ = 0; }
+    void seekToLast() nothrow @nogc { pos_ = cast(int) keys_.length - 1; }
+
+    void seek(Slice target)
+    {
+        // 线性搜索找到 >= target 的第一个键
+        for (size_t i = 0; i < keys_.length; i++)
+        {
+            if (keys_[i].opCmp(target) >= 0)
+            {
+                pos_ = cast(int) i;
+                return;
+            }
+        }
+        pos_ = cast(int) keys_.length;
+    }
+
+    void next() nothrow @nogc { pos_++; }
+    void prev() nothrow @nogc { pos_--; }
+
+    Slice key() nothrow @nogc
+    {
+        assert(valid());
+        return keys_[pos_];
+    }
+
+    Slice value() nothrow @nogc
+    {
+        assert(valid());
+        return values_[pos_];
+    }
+
+    Status status() const nothrow @nogc { return status_; }
+}
+
+///
+unittest
+{
+    import dleveldb.block_builder;
+    import dleveldb.block;
+    import dleveldb.comparator;
+
+    // ====== TwoLevelIterator.seek() 测试 ======
+    // 模拟 SSTable 结构：索引块 -> 数据块
+
+    // 构建两个数据块
+    auto bb1 = BlockBuilder(16);
+    bb1.add(Slice("a"), Slice("va"));
+    bb1.add(Slice("b"), Slice("vb"));
+    auto blockData1 = bb1.finish();
+    ubyte[] blockBuf1 = blockData1.data()[0 .. blockData1.size()].dup;
+
+    auto bb2 = BlockBuilder(16);
+    bb2.add(Slice("c"), Slice("vc"));
+    bb2.add(Slice("d"), Slice("vd"));
+    auto blockData2 = bb2.finish();
+    ubyte[] blockBuf2 = blockData2.data()[0 .. blockData2.size()].dup;
+
+    // 构建索引块：索引键是数据块的最后一个键，值是块句柄（这里用简单标识）
+    // 索引键 "b" -> 块1, 索引键 "d" -> 块2
+    auto bbIdx = BlockBuilder(16);
+    // 用 "b" 和 "d" 作为索引分隔键，值为块编号
+    ubyte[1] handle1 = [0];
+    ubyte[1] handle2 = [1];
+    bbIdx.add(Slice("b"), Slice(handle1.ptr, 1));
+    bbIdx.add(Slice("d"), Slice(handle2.ptr, 1));
+    auto idxData = bbIdx.finish();
+    ubyte[] idxBuf = idxData.data()[0 .. idxData.size()].dup;
+
+    auto idxBlock = new Block(Slice(idxBuf.ptr, idxBuf.length));
+    Iterator idxIter = idxBlock.iterator(defaultComparator());
+
+    // 块数据数组
+    Slice[] blockSlices = [
+        Slice(blockBuf1.ptr, blockBuf1.length),
+        Slice(blockBuf2.ptr, blockBuf2.length),
+    ];
+
+    // blockFunc: 根据索引值创建数据块迭代器
+    Iterator delegate(Slice) blockFunc = (Slice handle) {
+        uint blockIdx = handle.data()[0];
+        auto blk = new Block(blockSlices[blockIdx]);
+        return blk.iterator(defaultComparator());
+    };
+
+    auto twoLevelIter = new TwoLevelIterator(idxIter, blockFunc);
+
+    // --- 测试1: seek到第一个块 ---
+    twoLevelIter.seek(Slice("a"));
+    assert(twoLevelIter.valid());
+    assert(twoLevelIter.key() == Slice("a"));
+    assert(twoLevelIter.value() == Slice("va"));
+
+    twoLevelIter.seek(Slice("b"));
+    assert(twoLevelIter.valid());
+    assert(twoLevelIter.key() == Slice("b"));
+
+    // --- 测试2: seek到第二个块 ---
+    twoLevelIter.seek(Slice("c"));
+    assert(twoLevelIter.valid());
+    assert(twoLevelIter.key() == Slice("c"));
+    assert(twoLevelIter.value() == Slice("vc"));
+
+    twoLevelIter.seek(Slice("d"));
+    assert(twoLevelIter.valid());
+    assert(twoLevelIter.key() == Slice("d"));
+
+    // --- 测试3: seek到不存在的键 ---
+    twoLevelIter.seek(Slice("b0"));
+    assert(twoLevelIter.valid());
+    assert(twoLevelIter.key() == Slice("c"));  // "b0" 在 b 和 c 之间
+
+    // --- 测试4: seek超出范围 ---
+    twoLevelIter.seek(Slice("z"));
+    assert(!twoLevelIter.valid());
+
+    // --- 测试5: seekToFirst + next 全遍历 ---
+    twoLevelIter.seekToFirst();
+    assert(twoLevelIter.key() == Slice("a"));
+    twoLevelIter.next();
+    assert(twoLevelIter.key() == Slice("b"));
+    twoLevelIter.next();
+    assert(twoLevelIter.key() == Slice("c"));
+    twoLevelIter.next();
+    assert(twoLevelIter.key() == Slice("d"));
+    twoLevelIter.next();
+    assert(!twoLevelIter.valid());
+}

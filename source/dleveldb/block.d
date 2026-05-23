@@ -76,6 +76,7 @@ private:
     Block block_;
     Comparator cmp_;
     uint restartIndex_;  // 当前重启点索引
+    uint currentOffset_; // 当前条目在块数据中的偏移
     Slice key_;          // 当前键
     Slice value_;        // 当前值
     Status status_;
@@ -87,6 +88,7 @@ public:
         block_ = block;
         cmp_ = cmp;
         restartIndex_ = 0;
+        currentOffset_ = 0;
         valid_ = false;
     }
 
@@ -183,11 +185,32 @@ public:
             return;
         }
 
-        // 解码下一个条目
+        // 先从当前偏移处解码，计算当前条目大小以跳到下一个
         const(ubyte)* ptr = block_.data().data() + offset;
         const(ubyte)* limit = block_.data().data() + block_.restartsOffset_;
 
         uint sharedLen, nonShared, valueLength;
+        if (!decodeVarint32(ptr, limit, sharedLen) ||
+            !decodeVarint32(ptr, limit, nonShared) ||
+            !decodeVarint32(ptr, limit, valueLength))
+        {
+            valid_ = false;
+            status_ = statusCorruption("bad entry in block");
+            return;
+        }
+
+        // 跳到下一个条目
+        uint nextOffset = cast(uint) (ptr + nonShared + valueLength - block_.data().data());
+
+        if (nextOffset >= cast(uint) block_.restartsOffset_)
+        {
+            valid_ = false;
+            return;
+        }
+
+        // 在nextOffset处解码下一个条目
+        ptr = block_.data().data() + nextOffset;
+
         if (!decodeVarint32(ptr, limit, sharedLen) ||
             !decodeVarint32(ptr, limit, nonShared) ||
             !decodeVarint32(ptr, limit, valueLength))
@@ -205,7 +228,6 @@ public:
         }
 
         // 更新key：保留shared前缀，替换nonShared部分
-        // 使用D标准数组切片拷贝替代memcpy
         ubyte[] newKey;
         newKey.length = sharedLen + nonShared;
         
@@ -221,10 +243,11 @@ public:
 
         key_ = Slice(newKey.ptr, newKey.length);
         value_ = Slice(ptr, valueLength);
+        currentOffset_ = nextOffset;
 
         // 更新重启点索引
         while (restartIndex_ + 1 < cast(uint) block_.numRestarts() &&
-               block_.restartPoint(cast(int) (restartIndex_ + 1)) < offset)
+               block_.restartPoint(cast(int) (restartIndex_ + 1)) <= nextOffset)
         {
             restartIndex_++;
         }
@@ -255,11 +278,9 @@ public:
 
 private:
     /// 获取当前偏移
-    uint currentOffset() nothrow @nogc
+    uint currentOffset() const nothrow @nogc
     {
-        // 基于key/value在data_中的位置计算
-        // 简化实现
-        return 0;
+        return currentOffset_;
     }
 
     /// 定位到重启点
@@ -290,6 +311,7 @@ private:
         value_ = Slice(ptr, valueLength);
         valid_ = true;
         restartIndex_ = cast(uint) index;
+        currentOffset_ = offset;
     }
 
     /// 在指定偏移处解码条目
@@ -311,4 +333,135 @@ private:
         value_ = Slice(ptr, valueLength);
         return true;
     }
+}
+
+///
+unittest
+{
+    import dleveldb.block_builder;
+    import dleveldb.comparator;
+
+    // ====== BlockIter.seek() 测试 ======
+    // 通过 BlockBuilder 构建块，再用 Block + BlockIter 读取验证
+
+    // --- 测试1: 基本seek定位 ---
+    auto bb1 = BlockBuilder(16);
+    bb1.add(Slice("a"), Slice("va"));
+    bb1.add(Slice("b"), Slice("vb"));
+    bb1.add(Slice("c"), Slice("vc"));
+
+    auto blockData1 = bb1.finish();
+    // 需要拷贝数据，因为 BlockBuilder 的 buffer 可能被修改
+    ubyte[] blockBuf1 = blockData1.data()[0 .. blockData1.size()].dup;
+    auto block1 = new Block(Slice(blockBuf1.ptr, blockBuf1.length));
+    auto iter1 = block1.iterator(defaultComparator());
+
+    iter1.seek(Slice("b"));
+    assert(iter1.valid());
+    assert(iter1.key() == Slice("b"));
+    assert(iter1.value() == Slice("vb"));
+
+    iter1.seek(Slice("a"));
+    assert(iter1.valid());
+    assert(iter1.key() == Slice("a"));
+    assert(iter1.value() == Slice("va"));
+
+    iter1.seek(Slice("c"));
+    assert(iter1.valid());
+    assert(iter1.key() == Slice("c"));
+
+    // --- 测试2: seek到不存在的键，定位到下一个 ---
+    iter1.seek(Slice("b0"));
+    assert(iter1.valid());
+    assert(iter1.key() == Slice("c"));
+
+    // seek到最前之前
+    iter1.seek(Slice("0"));
+    assert(iter1.valid());
+    assert(iter1.key() == Slice("a"));
+
+    // seek超出范围
+    iter1.seek(Slice("z"));
+    assert(!iter1.valid());
+
+    // --- 测试3: seekToFirst + next 全遍历 ---
+    iter1.seekToFirst();
+    assert(iter1.valid());
+    assert(iter1.key() == Slice("a"));
+    iter1.next();
+    assert(iter1.valid());
+    assert(iter1.key() == Slice("b"));
+    iter1.next();
+    assert(iter1.valid());
+    assert(iter1.key() == Slice("c"));
+    iter1.next();
+    assert(!iter1.valid());
+
+    // --- 测试4: 前缀共享的键 ---
+    auto bb2 = BlockBuilder(16);
+    bb2.add(Slice("key1"), Slice("val1"));
+    bb2.add(Slice("key2"), Slice("val2"));
+    bb2.add(Slice("key3"), Slice("val3"));
+
+    auto blockData2 = bb2.finish();
+    ubyte[] blockBuf2 = blockData2.data()[0 .. blockData2.size()].dup;
+    auto block2 = new Block(Slice(blockBuf2.ptr, blockBuf2.length));
+    auto iter2 = block2.iterator(defaultComparator());
+
+    iter2.seek(Slice("key2"));
+    assert(iter2.valid());
+    assert(iter2.key() == Slice("key2"));
+    assert(iter2.value() == Slice("val2"));
+
+    iter2.seek(Slice("key0"));
+    assert(iter2.valid());
+    assert(iter2.key() == Slice("key1"));
+
+    iter2.seek(Slice("key4"));
+    assert(!iter2.valid());
+
+    // --- 测试5: 无前缀共享（restartInterval=1）---
+    auto bb3 = BlockBuilder(1);
+    bb3.add(Slice("alpha"), Slice("1"));
+    bb3.add(Slice("beta"), Slice("2"));
+    bb3.add(Slice("gamma"), Slice("3"));
+
+    auto blockData3 = bb3.finish();
+    ubyte[] blockBuf3 = blockData3.data()[0 .. blockData3.size()].dup;
+    auto block3 = new Block(Slice(blockBuf3.ptr, blockBuf3.length));
+    auto iter3 = block3.iterator(defaultComparator());
+
+    iter3.seek(Slice("beta"));
+    assert(iter3.valid());
+    assert(iter3.key() == Slice("beta"));
+    assert(iter3.value() == Slice("2"));
+
+    iter3.seekToFirst();
+    assert(iter3.key() == Slice("alpha"));
+    iter3.next();
+    assert(iter3.key() == Slice("beta"));
+    iter3.next();
+    assert(iter3.key() == Slice("gamma"));
+    iter3.next();
+    assert(!iter3.valid());
+
+    // --- 测试6: 单键块 ---
+    auto bb4 = BlockBuilder(16);
+    bb4.add(Slice("only"), Slice("val"));
+
+    auto blockData4 = bb4.finish();
+    ubyte[] blockBuf4 = blockData4.data()[0 .. blockData4.size()].dup;
+    auto block4 = new Block(Slice(blockBuf4.ptr, blockBuf4.length));
+    auto iter4 = block4.iterator(defaultComparator());
+
+    iter4.seek(Slice("only"));
+    assert(iter4.valid());
+    assert(iter4.key() == Slice("only"));
+
+    iter4.seek(Slice("n"));  // "n" < "only"
+    assert(iter4.valid());
+    assert(iter4.key() == Slice("only"));
+
+    iter4.seek(Slice("p"));  // "p" > "only"
+    assert(!iter4.valid());
 }
