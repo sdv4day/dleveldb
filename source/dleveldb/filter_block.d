@@ -158,7 +158,7 @@ public:
 unittest
 {
     // FilterBlockBuilder 基本流程
-    auto policy = newBloomFilterPolicy(10);
+    auto policy = bloomFilterPolicy(10);
     auto builder = new FilterBlockBuilder(policy);
 
     builder.startBlock(0);

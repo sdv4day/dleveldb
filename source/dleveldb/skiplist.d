@@ -217,8 +217,8 @@ private:
     }
 
 public:
-    /// 初始化（需手动调用，因为这是struct）
-    void initialize(IAllocator allocator, Cmp cmp) 
+    /// 构造函数（D惯用：构造即初始化）
+    this(IAllocator allocator, Cmp cmp) 
     {
         allocator_ = allocator;
         cmp_ = cmp;
@@ -366,8 +366,7 @@ unittest
 
     auto arena = new Arena();
     auto cmp = SliceComparator();
-    SkipList!(Slice, SliceComparator) list;
-    list.initialize(cast(IAllocator) arena, cmp);
+    auto list = SkipList!(Slice, SliceComparator)(cast(IAllocator) arena, cmp);
 
     // 空表
     assert(list.empty());

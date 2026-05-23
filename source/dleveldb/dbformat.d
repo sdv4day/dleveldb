@@ -148,8 +148,7 @@ struct InternalKey
     {
         rep_.length = userKey.size() + ulong.sizeof;
         // 拷贝userKey
-        for (size_t i = 0; i < userKey.size(); i++)
-            rep_[i] = userKey.data()[i];
+        rep_[0 .. userKey.size()] = userKey.asBytes();
         // 编码packedTag
         encodeFixed64(rep_.ptr + userKey.size(), packSequenceAndType(seq, type));
     }
@@ -217,8 +216,7 @@ public:
         encodeVarint32(rep_.ptr, cast(uint) internalKeySize);
 
         // 拷贝userKey
-        for (size_t i = 0; i < userKey.size(); i++)
-            rep_[varintLen + i] = userKey.data()[i];
+        rep_[varintLen .. varintLen + userKey.size()] = userKey.asBytes();
 
         // 编码packedTag
         encodeFixed64(rep_.ptr + varintLen + userKey.size(),

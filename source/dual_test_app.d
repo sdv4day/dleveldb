@@ -5,14 +5,15 @@
 module dual_test_app;
 
 import dleveldb.dual_db_test;
-shared static this()
-{
-    import core.sys.windows.windows;
-    SetConsoleOutputCP(65001);
-    SetConsoleCP(65001);    
-}
+
 int main()
 {
+    version (Windows)
+    {
+        import core.sys.windows.windows;
+        SetConsoleOutputCP(65001);
+        SetConsoleCP(65001);
+    }
     runDualDbTests();
     return 0;
 }

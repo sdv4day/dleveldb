@@ -6,24 +6,25 @@ module dleveldb.crc32c;
  * 支持SSE4.2硬件加速
  */
 
-// CRC32C查找表
-private uint[256] crc32cTable;
+/// 编译时生成CRC32C查找表（CTFE，零运行时初始化开销）
+private enum uint[256] crc32cTable = generateCrc32cTable();
 
-shared static this()
+private uint[256] generateCrc32cTable() pure
 {
-    // 初始化CRC32C查找表
+    uint[256] table;
     for (uint i = 0; i < 256; i++)
     {
         uint crc = i;
         for (int j = 0; j < 8; j++)
         {
             if (crc & 1)
-                crc = (crc >> 1) ^ 0x82F63B78u; // Castagnoli多项式
+                crc = (crc >> 1) ^ 0x82F63B78u;
             else
                 crc >>= 1;
         }
-        crc32cTable[i] = crc;
+        table[i] = crc;
     }
+    return table;
 }
 
 /// 计算CRC32C校验和（软件实现）

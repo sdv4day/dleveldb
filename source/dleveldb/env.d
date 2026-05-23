@@ -619,19 +619,13 @@ version (Windows)
         }
     }
 
-    /// 全局默认 Windows 环境实例
-    __gshared WindowsEnv windowsEnv_;
-
-    shared static this()
+    /// 获取默认环境（TLS惰性初始化，线程安全）
+    Env defaultEnv()
     {
-        windowsEnv_ = new WindowsEnv();
-
-    }
-
-    /// 获取默认环境
-    Env defaultEnv() nothrow @nogc
-    {
-        return windowsEnv_;
+        static WindowsEnv inst;
+        if (inst is null)
+            inst = new WindowsEnv();
+        return inst;
     }
 }
 else
@@ -862,17 +856,12 @@ else
         }
     }
 
-    /// 全局默认 Posix 环境实例
-    __gshared PosixEnv posixEnv_;
-
-    shared static this()
+    /// 获取默认环境（TLS惰性初始化，线程安全）
+    Env defaultEnv()
     {
-        posixEnv_ = new PosixEnv();
-    }
-
-    /// 获取默认环境
-    Env defaultEnv() nothrow @nogc
-    {
-        return posixEnv_;
+        static PosixEnv inst;
+        if (inst is null)
+            inst = new PosixEnv();
+        return inst;
     }
 }

@@ -90,7 +90,7 @@ public:
         arena_ = new Arena(allocator);
         allocator_ = cast(IAllocator) arena_;
         cmp_ = MemTableKeyComparator(icmp);
-        table_.initialize(allocator_, cmp_);
+        table_ = SkipList!(const(char)*, MemTableKeyComparator)(allocator_, cmp_);
         refs_ = 1;
     }
 
@@ -203,8 +203,7 @@ public:
                     if (decodeVarint32(valStart, valStart + 10, valLen))
                     {
                         value.length = valLen;
-                        for (size_t i = 0; i < valLen; i++)
-                            value[i] = valStart[i];
+                        value[] = valStart[0 .. valLen];
                         status = Status();
                         return true;
                     }

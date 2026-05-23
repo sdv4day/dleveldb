@@ -48,13 +48,13 @@ public:
 }
 
 /// 创建默认键过滤器
-KeyFilter newNullKeyFilter()
+KeyFilter nullKeyFilter()
 {
     return new NullKeyFilter();
 }
 
 /// 创建前缀键过滤器
-KeyFilter newPrefixKeyFilter(Slice prefix)
+KeyFilter prefixKeyFilter(Slice prefix)
 {
     return new PrefixKeyFilter(prefix);
 }

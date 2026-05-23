@@ -73,7 +73,7 @@ public:
     }
 
     /// 添加Delete操作
-    void delete_(Slice key) 
+    void remove(Slice key) 
     {
         setCount(count() + 1);
         rep_ ~= cast(ubyte) ValueType.deletion;
@@ -98,7 +98,7 @@ public:
     /// 迭代器接口：遍历WriteBatch中的所有操作
     /// handler: 接收每个操作的回调
     ///   void put(Slice key, Slice value)
-    ///   void delete_(Slice key)
+    ///   void remove(Slice key)
     Status iterate(WriteBatchHandler handler) 
     {
         Slice input = Slice(rep_.ptr, rep_.length);
@@ -129,7 +129,7 @@ public:
                 Slice key;
                 if (!getLengthPrefixedSlice(ptr, limit, key))
                     return statusCorruption("bad WriteBatch Delete");
-                handler.delete_(key);
+                handler.remove(key);
             }
             else
             {
@@ -162,7 +162,7 @@ private:
 interface WriteBatchHandler
 {
     void put(Slice key, Slice value);
-    void delete_(Slice key);
+    void remove(Slice key);
 }
 
 /**
@@ -187,7 +187,7 @@ public:
         sequence_++;
     }
 
-    void delete_(Slice key)
+    void remove(Slice key)
     {
         mem_.add(sequence_, ValueType.deletion, key, Slice());
         sequence_++;
@@ -216,7 +216,7 @@ unittest
     assert(batch.count() == 2);
 
     // 添加 Delete 操作
-    batch.delete_(Slice("key3"));
+    batch.remove(Slice("key3"));
     assert(batch.count() == 3);
 
     // 设置序列号
@@ -239,7 +239,7 @@ unittest
             lastPutValue = value.asString().idup;
         }
 
-        void delete_(Slice key)
+        void remove(Slice key)
         {
             delCount++;
             lastDelKey = key.asString().idup;
@@ -263,7 +263,7 @@ unittest
     b1.put(Slice("a"), Slice("1"));
     auto b2 = new WriteBatch();
     b2.put(Slice("b"), Slice("2"));
-    b2.delete_(Slice("c"));
+    b2.remove(Slice("c"));
     b1.append(b2);
     assert(b1.count() == 3);
 }

@@ -91,9 +91,9 @@ struct WriteOptions
 Options sanitizeOptions(Options options)
 {
     import dleveldb.comparator : defaultComparator;
-    import dleveldb.filter_policy : newBloomFilterPolicy;
-    import dleveldb.key_filter : newNullKeyFilter;
-    import dleveldb.compression_filter : newNullCompressionFilter;
+    import dleveldb.filter_policy : bloomFilterPolicy;
+    import dleveldb.key_filter : nullKeyFilter;
+    import dleveldb.compression_filter : nullCompressionFilter;
 
     Options result = options;
 
@@ -104,13 +104,13 @@ Options sanitizeOptions(Options options)
         result.env = defaultEnv();
 
     if (result.filterPolicy is null)
-        result.filterPolicy = newBloomFilterPolicy(10);
+        result.filterPolicy = bloomFilterPolicy(10);
 
     if (result.keyFilter is null)
-        result.keyFilter = newNullKeyFilter();
+        result.keyFilter = nullKeyFilter();
 
     if (result.compressionFilter is null)
-        result.compressionFilter = newNullCompressionFilter();
+        result.compressionFilter = nullCompressionFilter();
 
     // 校验范围
     if (result.maxOpenFiles < 74)

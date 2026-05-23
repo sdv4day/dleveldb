@@ -244,7 +244,7 @@ public:
     }
 
     /// 删除键
-    Status delete_(WriteOptions options, Slice key)
+    Status remove(WriteOptions options, Slice key)
     {
         // 检查键过滤器
         if (options_.keyFilter !is null && options_.keyFilter.filter(key))
@@ -253,7 +253,7 @@ public:
         }
 
         auto batch = new WriteBatch();
-        batch.delete_(key);
+        batch.remove(key);
         return write(options, batch);
     }
 

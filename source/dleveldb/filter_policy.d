@@ -57,9 +57,7 @@ public:
 
         size_t oldLen = dst.length;
         dst.length = oldLen + cast(size_t) bytes;
-        // 初始化为0
-        for (size_t i = oldLen; i < dst.length; i++)
-            dst[i] = 0;
+        dst[oldLen .. $] = 0;
 
         for (int i = 0; i < n; i++)
         {
@@ -131,7 +129,7 @@ abstract class UserFilterPolicy : FilterPolicy
 }
 
 /// 创建布隆过滤器
-FilterPolicy newBloomFilterPolicy(int bitsPerKey = 10)
+FilterPolicy bloomFilterPolicy(int bitsPerKey = 10)
 {
     return new BloomFilterPolicy(bitsPerKey);
 }
@@ -140,7 +138,7 @@ FilterPolicy newBloomFilterPolicy(int bitsPerKey = 10)
 unittest
 {
     // 布隆过滤器名称
-    auto bf = newBloomFilterPolicy(10);
+    auto bf = bloomFilterPolicy(10);
     assert(bf.name() == "dleveldb.BloomFilterPolicy");
 
     // 创建过滤器并查询匹配
@@ -164,7 +162,7 @@ unittest
     assert(bf.keyMayMatch(Slice("abc"), Slice(singleFilter)));
 
     // 不同bitsPerKey
-    auto bf2 = newBloomFilterPolicy(20);
+    auto bf2 = bloomFilterPolicy(20);
     assert(bf2.name() == "dleveldb.BloomFilterPolicy");
     ubyte[] filter2;
     bf2.createFilter(keys, 3, filter2);

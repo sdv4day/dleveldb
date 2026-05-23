@@ -120,8 +120,14 @@ struct Slice
      * 为基本类型常量创建安全引用 Slice
      * 数据存储在 TLS 缓冲区中，Slice 仅引用
      * 
+     * ⚠ 生命周期陷阱：返回的Slice引用TLS缓冲区中的static变量，
+     *   下次对同一类型T调用Ref()会覆盖前值，使之前返回的Slice悬空。
+     *   因此必须在下一次Ref!T()调用前使用完毕，不可存储。
+     * 
      * 示例：
      *   auto s = Slice.Ref(42);  // 创建 int 值 42 的 Slice
+     *   // ⚠ 不可: auto s1 = Slice.Ref(1); auto s2 = Slice.Ref(2); 
+     *   //   此时s1引用已被s2覆盖！
      */
     static Slice Ref(T)(T value)
         if (isBasicType!T || isPODStruct!T)

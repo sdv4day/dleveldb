@@ -72,18 +72,13 @@ class BytewiseComparator : Comparator
     }
 }
 
-/// 全局默认比较器实例
-__gshared BytewiseComparator bytewiseComparator_;
-
-shared static this()
+/// 获取默认比较器（TLS惰性初始化，线程安全）
+Comparator defaultComparator()
 {
-    bytewiseComparator_ = new BytewiseComparator();
-}
-
-/// 获取默认比较器
-Comparator defaultComparator() nothrow @nogc
-{
-    return bytewiseComparator_;
+    static BytewiseComparator inst;
+    if (inst is null)
+        inst = new BytewiseComparator();
+    return inst;
 }
 
 ///

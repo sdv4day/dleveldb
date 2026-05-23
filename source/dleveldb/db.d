@@ -124,7 +124,7 @@ public:
     void del(K)(in K key, const(WriteOptions) opt = WriteOptions())
     {
         checkOpen();
-        auto s = impl_.delete_(opt, toSliceKey(key));
+        auto s = impl_.remove(opt, toSliceKey(key));
         if (!s.ok())
             throw new LeveldbException(s);
     }
@@ -317,14 +317,8 @@ private:
     }
 }
 
-/// 全局默认读选项
-__gshared ReadOptions DefaultReadOptions;
+/// 全局默认读选项（编译时常量，零运行时开销）
+enum ReadOptions defaultReadOptions = ReadOptions();
 
-/// 全局默认写选项
-__gshared WriteOptions DefaultWriteOptions;
-
-shared static this()
-{
-    DefaultReadOptions = ReadOptions();
-    DefaultWriteOptions = WriteOptions();
-}
+/// 全局默认写选项（编译时常量，零运行时开销）
+enum WriteOptions defaultWriteOptions = WriteOptions();

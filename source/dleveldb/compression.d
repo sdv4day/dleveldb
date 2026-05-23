@@ -49,8 +49,7 @@ class NoneCompressor : Compressor
     {
         // 无压缩，直接拷贝
         output.length = compressed.size();
-        for (size_t i = 0; i < compressed.size(); i++)
-            output[i] = compressed.data()[i];
+        output[] = compressed.asBytes();
         return Status();
     }
 }
@@ -58,7 +57,7 @@ class NoneCompressor : Compressor
 /**
  * Snappy压缩实现（条件编译）
  */
-version (HaveSnappy)
+version (HasSnappy)
 {
     // 如果有snappy库，可以实现SnappyCompressor
 }
@@ -66,20 +65,20 @@ version (HaveSnappy)
 /**
  * Zstd压缩实现（条件编译）
  */
-version (HaveZstd)
+version (HasZstd)
 {
     // 如果有zstd库，可以实现ZstdCompressor
 }
 
 /// 创建压缩器
-Compressor newCompressor(CompressionType type)
+Compressor createCompressor(CompressionType type)
 {
     final switch (type)
     {
         case CompressionType.none:
             return new NoneCompressor();
         case CompressionType.snappy:
-            version (HaveSnappy)
+            version (HasSnappy)
             {
                 // return new SnappyCompressor();
             }
@@ -87,11 +86,11 @@ Compressor newCompressor(CompressionType type)
             {
                 import core.stdc.stdio : fprintf, stderr;
                 fprintf(stderr, "Warning: Snappy compression not available"
-                    ~ " (compile with -version=HaveSnappy), falling back to none.\n");
+                    ~ " (compile with -version=HasSnappy), falling back to none.\n");
             }
             return new NoneCompressor(); // 降级为无压缩
         case CompressionType.zstd:
-            version (HaveZstd)
+            version (HasZstd)
             {
                 // return new ZstdCompressor();
             }
@@ -99,7 +98,7 @@ Compressor newCompressor(CompressionType type)
             {
                 import core.stdc.stdio : fprintf, stderr;
                 fprintf(stderr, "Warning: Zstd compression not available"
-                    ~ " (compile with -version=HaveZstd), falling back to none.\n");
+                    ~ " (compile with -version=HasZstd), falling back to none.\n");
             }
             return new NoneCompressor(); // 降级为无压缩
     }
@@ -126,13 +125,13 @@ unittest
     assert(output.length == 3);
     assert(output[0] == 0x01 && output[1] == 0x02 && output[2] == 0x03);
 
-    // newCompressor 各类型
-    auto c1 = newCompressor(CompressionType.none);
+    // createCompressor 各类型
+    auto c1 = createCompressor(CompressionType.none);
     assert(c1.type() == CompressionType.none);
 
     // snappy/zstd 降级为 none（无对应库时）
-    auto c2 = newCompressor(CompressionType.snappy);
+    auto c2 = createCompressor(CompressionType.snappy);
     assert(c2.type() == CompressionType.none);
-    auto c3 = newCompressor(CompressionType.zstd);
+    auto c3 = createCompressor(CompressionType.zstd);
     assert(c3.type() == CompressionType.none);
 }

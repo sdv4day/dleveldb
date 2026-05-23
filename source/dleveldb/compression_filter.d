@@ -46,7 +46,7 @@ class NullCompressionFilter : CompressionFilter
 }
 
 /// 创建默认压缩过滤器
-CompressionFilter newNullCompressionFilter()
+CompressionFilter nullCompressionFilter()
 {
     return new NullCompressionFilter();
 }

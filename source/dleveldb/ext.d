@@ -41,37 +41,37 @@ public:
     }
 
     /// 写入
-    void put(V)(in ulong key, in V val, const(WriteOptions) opt = DefaultWriteOptions)
+    void put(V)(in ulong key, in V val, const(WriteOptions) opt = defaultWriteOptions)
     {
         db_.put(Slice.Ref(key), val, opt);
     }
 
     /// 读取
-    bool get(V)(in ulong key, out V val, const(ReadOptions) opt = DefaultReadOptions)
+    bool get(V)(in ulong key, out V val, const(ReadOptions) opt = defaultReadOptions)
     {
         return db_.get(Slice.Ref(key), val, opt);
     }
 
     /// 删除
-    void del(in ulong key, const(WriteOptions) opt = DefaultWriteOptions)
+    void del(in ulong key, const(WriteOptions) opt = defaultWriteOptions)
     {
         db_.del(Slice.Ref(key), opt);
     }
 
     /// 查找，不存在返回默认值
-    V find(V)(in ulong key, V def, const(ReadOptions) opt = DefaultReadOptions)
+    V find(V)(in ulong key, V def, const(ReadOptions) opt = defaultReadOptions)
     {
         return db_.find(Slice.Ref(key), def, opt);
     }
 
     /// 获取 Slice
-    auto getSlice(in ulong key, const(ReadOptions) opt = DefaultReadOptions)
+    auto getSlice(in ulong key, const(ReadOptions) opt = defaultReadOptions)
     {
         return db_.getSlice(Slice.Ref(key), opt);
     }
 
     /// 创建迭代器
-    Iterator iterator(const(ReadOptions) opt = DefaultReadOptions)
+    Iterator iterator(const(ReadOptions) opt = defaultReadOptions)
     {
         return db_.iterator(opt);
     }
