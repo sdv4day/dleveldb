@@ -248,9 +248,10 @@ class MemTableIterator : Iterator
 private:
     SkipListIterator!(const(char)*, MemTableKeyComparator) iter_;
     bool valid_;
+    ubyte[] encodeBuf_;  // seek时构造varint32前缀的临时缓冲区
 
 public:
-    this(SkipList!(const(char)*, MemTableKeyComparator)* list)  @nogc
+    this(SkipList!(const(char)*, MemTableKeyComparator)* list)
     {
         iter_ = list.iterator();
         valid_ = false;
@@ -260,10 +261,24 @@ public:
 
     void seekToFirst()  @nogc { iter_.seekToFirst(); }
     void seekToLast()  @nogc { iter_.seekToLast(); }
-    void seek(Slice target)  @nogc
+
+    /// seek到>=target的首条（target为internal key格式）
+    /// 需要添加varint32长度前缀以匹配SkipList中存储的memtable key格式
+    void seek(Slice target)
     {
-        iter_.seek(cast(const(char)*) target.data());
+        // EncodeKey: varint32(target.size()) + target
+        // 与C++ leveldb的EncodeKey()一致
+        size_t targetSize = target.size();
+        int varintLen = varintLength(cast(uint) targetSize);
+        encodeBuf_.length = varintLen + targetSize;
+        encodeVarint32(encodeBuf_.ptr, cast(uint) targetSize);
+        if (targetSize > 0)
+        {
+            encodeBuf_[varintLen .. varintLen + targetSize] = target.asBytes();
+        }
+        iter_.seek(cast(const(char)*) encodeBuf_.ptr);
     }
+
     void next()  @nogc { iter_.next(); }
     void prev()  @nogc { iter_.prev(); }
 

@@ -151,9 +151,7 @@ private:
                         valid_ = true;
                         savedKey_ = extractUserKey(ikey);
                         Slice val = internalIter_.value();
-                        savedValue_.length = val.size();
-                        for (size_t i = 0; i < val.size(); i++)
-                            savedValue_[i] = val.data()[i];
+                        savedValue_ = val.data()[0 .. val.size()].dup;
                         return;
                     }
                 }
