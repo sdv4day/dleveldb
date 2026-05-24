@@ -16,3 +16,4 @@ dleveldb-test-*
 *.obj
 *.lst
 dub.selections.json
+.sisyphus/
