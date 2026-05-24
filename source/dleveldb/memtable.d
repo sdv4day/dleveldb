@@ -251,15 +251,20 @@ private:
     ubyte[] encodeBuf_;  // seek时构造varint32前缀的临时缓冲区
 
 public:
+    /// 构造 MemTable 迭代器
     this(SkipList!(const(char)*, MemTableKeyComparator)* list)
     {
         iter_ = list.iterator();
         valid_ = false;
     }
 
+    /// 检查当前是否指向有效条目
     bool valid() const nothrow @nogc { return iter_.valid(); }
 
+    /// 定位到第一个条目
     void seekToFirst()  @nogc { iter_.seekToFirst(); }
+
+    /// 定位到最后一个条目
     void seekToLast()  @nogc { iter_.seekToLast(); }
 
     /// seek到>=target的首条（target为internal key格式）
@@ -279,9 +284,13 @@ public:
         iter_.seek(cast(const(char)*) encodeBuf_.ptr);
     }
 
+    /// 移动到下一个条目
     void next()  @nogc { iter_.next(); }
+
+    /// 移动到上一个条目
     void prev()  @nogc { iter_.prev(); }
 
+    /// 获取当前条目的内部键（跳过varint32长度前缀）
     Slice key() nothrow @nogc
     {
         // 返回内部键部分（跳过varint32长度前缀）
@@ -295,6 +304,7 @@ public:
         return Slice();
     }
 
+    /// 获取当前条目的值
     Slice value() nothrow @nogc
     {
         // 返回值部分
@@ -313,6 +323,7 @@ public:
         return Slice();
     }
 
+    /// 获取迭代器状态（始终返回 OK）
     Status status() const nothrow @nogc
     {
         return Status();

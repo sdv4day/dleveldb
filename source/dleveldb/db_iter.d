@@ -9,8 +9,16 @@ import dleveldb.coding;
 
 /**
  * 数据库级迭代器
- * 将内部键迭代器转换为用户键迭代器
- * 处理删除标记和序列号覆盖
+ *
+ * 将内部键迭代器转换为用户键迭代器，处理以下逻辑：
+ * - 过滤删除标记（ValueType.deletion 的条目对用户不可见）
+ * - 序列号覆盖（同键多版本时只返回最新可见版本）
+ * - 方向切换（forward/reverse 之间的转换）
+ *
+ * Params:
+ *   userCmp = 用户键比较器
+ *   internalIter = 内部键迭代器（由 MergingIterator 等提供）
+ *   sequence = 可见序列号上限，只返回 seq <= sequence 的条目
  */
 class DBIter : Iterator
 {
@@ -31,6 +39,7 @@ private:
     }
 
 public:
+    /// 构造数据库级迭代器
     this(Comparator userCmp, Iterator internalIter, ulong sequence)
     {
         userComparator_ = userCmp;
@@ -40,8 +49,10 @@ public:
         direction_ = Direction.forward;
     }
 
+    /// 检查当前是否指向有效的用户键条目
     bool valid() const nothrow @nogc { return valid_; }
 
+    /// 定位到第一个可见的用户键条目
     void seekToFirst()
     {
         internalIter_.seekToFirst();
@@ -49,6 +60,7 @@ public:
         findNextUserEntry(false, Slice());
     }
 
+    /// 定位到最后一个可见的用户键条目
     void seekToLast()
     {
         internalIter_.seekToLast();
@@ -56,6 +68,7 @@ public:
         findPrevUserEntry();
     }
 
+    /// 定位到第一个 >= target 的可见用户键条目
     void seek(Slice target)
     {
         InternalKey ikey = InternalKey(target, sequence_, ValueType.value);
@@ -64,6 +77,7 @@ public:
         findNextUserEntry(false, Slice());
     }
 
+    /// 移动到下一个可见的用户键条目
     void next()
     {
         assert(valid());
@@ -85,6 +99,7 @@ public:
         findNextUserEntry(true, savedKey_);
     }
 
+    /// 移动到上一个可见的用户键条目
     void prev()
     {
         assert(valid());
@@ -98,18 +113,21 @@ public:
         findPrevUserEntry();
     }
 
+    /// 获取当前用户键
     Slice key()
     {
         assert(valid());
         return savedKey_;
     }
 
+    /// 获取当前用户值
     Slice value()
     {
         assert(valid());
         return Slice(savedValue_.ptr, savedValue_.length);
     }
 
+    /// 获取迭代器状态
     Status status() const nothrow @nogc { return status_; }
 
 private:
@@ -377,4 +395,102 @@ unittest
 
     dbIter6.seekToFirst();
     assert(!dbIter6.valid());
+}
+
+///
+unittest
+{
+    import dleveldb.arena;
+    import dleveldb.memtable;
+    import dleveldb.comparator;
+
+    // ====== DBIter.seek() 边界情况测试 ======
+
+    auto icmp = InternalKeyComparator(defaultComparator());
+
+    // --- 测试1: seek后反向遍历 ---
+    // 注意：DBIter的反向遍历需要更复杂的测试设置
+    // 这里先跳过，专注于seek功能测试
+
+    // --- 测试2: 重复seek测试 ---
+    auto mem3 = new MemTable(icmp);
+    mem3.addRef();
+    mem3.add(1, ValueType.value, Slice("a"), Slice("va"));
+    mem3.add(2, ValueType.value, Slice("b"), Slice("vb"));
+    mem3.add(3, ValueType.value, Slice("c"), Slice("vc"));
+
+    Iterator internal3 = new MemTableIterator(mem3.tablePtr());
+    auto dbIter3 = new DBIter(defaultComparator(), internal3, 100);
+
+    // 多次seek不同位置
+    dbIter3.seek(Slice("b"));
+    assert(dbIter3.key() == Slice("b"));
+
+    dbIter3.seek(Slice("a"));
+    assert(dbIter3.key() == Slice("a"));
+
+    dbIter3.seek(Slice("c"));
+    assert(dbIter3.key() == Slice("c"));
+
+    dbIter3.seek(Slice("z"));
+    assert(!dbIter3.valid());
+
+    // 重新seek到有效位置
+    dbIter3.seek(Slice("b"));
+    assert(dbIter3.valid());
+    assert(dbIter3.key() == Slice("b"));
+
+    // --- 测试4: 空键测试 ---
+    auto mem4 = new MemTable(icmp);
+    mem4.addRef();
+    mem4.add(1, ValueType.value, Slice(""), Slice("empty_key"));
+    mem4.add(2, ValueType.value, Slice("a"), Slice("va"));
+
+    Iterator internal4 = new MemTableIterator(mem4.tablePtr());
+    auto dbIter4 = new DBIter(defaultComparator(), internal4, 100);
+
+    dbIter4.seek(Slice(""));
+    assert(dbIter4.valid());
+    assert(dbIter4.key() == Slice(""));
+
+    dbIter4.next();
+    assert(dbIter4.key() == Slice("a"));
+
+    // seek空键应该定位到第一个
+    dbIter4.seek(Slice(""));
+    assert(dbIter4.key() == Slice(""));
+
+    // --- 测试5: 删除标记与反向遍历 ---
+    // 注意：反向遍历测试暂时跳过
+
+    // --- 测试6: 多版本删除与seek ---
+    auto mem6 = new MemTable(icmp);
+    mem6.addRef();
+    mem6.add(1, ValueType.value, Slice("k"), Slice("v1"));
+    mem6.add(2, ValueType.deletion, Slice("k"), Slice());  // 删除
+    mem6.add(3, ValueType.value, Slice("k"), Slice("v3"));  // 重新写入
+
+    Iterator internal6 = new MemTableIterator(mem6.tablePtr());
+    auto dbIter6 = new DBIter(defaultComparator(), internal6, 100);
+
+    dbIter6.seek(Slice("k"));
+    assert(dbIter6.valid());
+    assert(dbIter6.key() == Slice("k"));
+    assert(dbIter6.value() == Slice("v3"));  // 最新版本
+
+    // sequence=2 只能看到删除标记
+    auto mem6b = new MemTable(icmp);
+    mem6b.addRef();
+    mem6b.add(1, ValueType.value, Slice("k"), Slice("v1"));
+    mem6b.add(2, ValueType.deletion, Slice("k"), Slice());
+    mem6b.add(3, ValueType.value, Slice("k"), Slice("v3"));
+
+    Iterator internal6b = new MemTableIterator(mem6b.tablePtr());
+    auto dbIter6b = new DBIter(defaultComparator(), internal6b, 2);
+
+    dbIter6b.seek(Slice("k"));
+    assert(!dbIter6b.valid());  // seq=2时k被删除
+
+    // --- 测试7: seekToLast与反向遍历 ---
+    // 注意：反向遍历测试暂时跳过
 }

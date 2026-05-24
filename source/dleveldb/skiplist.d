@@ -20,7 +20,9 @@ import dleveldb.comparator;
 struct SkipList(Key, Cmp)
 {
 public:
+    /// 跳表最大高度
     enum kMaxHeight = 12;
+    /// 分支因子（每层晋升概率为 1/kBranching）
     enum kBranching = 4;
 
 private:
@@ -302,45 +304,59 @@ private:
     SkipList!(Key, Cmp).Node* node_;
 
 public:
+    /// 构造函数
+    /// Params: list = 指向所属跳表的指针
     this(SkipList!(Key, Cmp)* list)  @nogc
     {
         list_ = list;
         node_ = null;
     }
 
+    /// 检查迭代器是否指向有效节点
+    /// Returns: 若当前节点有效返回 true，否则返回 false
     bool valid() const 
     {
         return node_ !is null;
     }
 
+    /// 获取当前节点的键
+    /// Returns: 当前节点存储的键
     Key key() const 
     {
         assert(valid());
         return node_.key;
     }
 
+    /// 移动到下一个节点（向右移动）
     void next()  @nogc
     {
         assert(valid());
         node_ = node_.nextAcquire(0);
     }
 
+    /// 移动到上一个节点（向左移动）
     void prev()  @nogc
     {
         assert(valid());
         node_ = list_.findLessThan(node_.key);
+        if (node_ == list_.head_)
+            node_ = null;
     }
 
+    /// 定位到第一个大于等于 target 的节点
+    /// Params: target = 查找目标键
     void seek(Key target)  @nogc
     {
         node_ = list_.findGreaterOrEqual(target, null);
     }
 
+    /// 定位到跳表中的第一个节点
     void seekToFirst()  @nogc
     {
         node_ = list_.head_.nextAcquire(0);
     }
 
+    /// 定位到跳表中的最后一个节点
     void seekToLast()  @nogc
     {
         node_ = list_.findLast();

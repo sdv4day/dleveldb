@@ -19,6 +19,9 @@ private:
     Status status_;
 
 public:
+    /// 构造多路归并迭代器
+    /// Params: cmp = 键比较器，用于确定迭代器间的排序顺序
+    ///         children = 待归并的子迭代器数组
     this(Comparator cmp, Iterator[] children)
     {
         cmp_ = cmp;
@@ -26,6 +29,8 @@ public:
         current_ = -1;
     }
 
+    /// 析构多路归并迭代器
+    /// 子迭代器的生命周期由创建者管理，此处不释放
     ~this()
     {
         foreach (child; children_)
@@ -34,12 +39,15 @@ public:
         }
     }
 
+    /// 检查迭代器是否指向有效位置
+    /// Returns: 若当前指向有效条目则返回 true，否则返回 false
     bool valid() const nothrow @nogc
     {
         return current_ >= 0 && current_ < cast(int) children_.length &&
             children_[current_].valid();
     }
 
+    /// 将所有子迭代器定位到各自的第一个条目，然后归并定位到全局最小键
     void seekToFirst()
     {
         foreach (child; children_)
@@ -49,6 +57,7 @@ public:
         findSmallest();
     }
 
+    /// 将所有子迭代器定位到各自的最后一个条目，然后归并定位到全局最大键
     void seekToLast()
     {
         foreach (child; children_)
@@ -58,6 +67,8 @@ public:
         findLargest();
     }
 
+    /// 将所有子迭代器定位到大于等于 target 的首条条目，然后归并定位到全局最小键
+    /// Params: target = 查找目标键
     void seek(Slice target)
     {
         foreach (child; children_)
@@ -67,6 +78,7 @@ public:
         findSmallest();
     }
 
+    /// 前进到下一个条目（当前迭代器前进后重新归并定位全局最小键）
     void next()
     {
         assert(valid());
@@ -75,6 +87,7 @@ public:
         findSmallest();
     }
 
+    /// 后退到上一个条目（当前迭代器后退后重新归并定位全局最大键）
     void prev()
     {
         assert(valid());
@@ -83,18 +96,24 @@ public:
         findLargest();
     }
 
+    /// 获取当前条目的键
+    /// Returns: 当前位置的键切片
     Slice key() nothrow @nogc
     {
         assert(valid());
         return children_[current_].key();
     }
 
+    /// 获取当前条目的值
+    /// Returns: 当前位置的值切片
     Slice value() nothrow @nogc
     {
         assert(valid());
         return children_[current_].value();
     }
 
+    /// 获取迭代器的整体状态
+    /// Returns: 若所有子迭代器状态正常则返回 OK 状态，否则返回第一个错误状态
     Status status() const nothrow @nogc
     {
         Status s;

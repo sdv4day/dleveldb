@@ -144,16 +144,16 @@ void main()
 
     // DB操作性能测试
     writeln("=== DB操作性能测试 ===");
-    benchDbOperations();
+    benchDbOperations(exeDir);
 
     // 多线程并发性能测试
     writeln();
     writeln("=== 多线程并发性能测试 ===");
-    benchMultiThreaded();
+    benchMultiThreaded(exeDir);
 }
 
 /// DB操作性能测试
-void benchDbOperations()
+void benchDbOperations(string exeDir)
 {
     import dleveldb;
 
@@ -243,7 +243,7 @@ void benchDbOperations()
 }
 
 /// 多线程并发性能测试
-void benchMultiThreaded()
+void benchMultiThreaded(string exeDir)
 {
     import std.parallelism : task, TaskPool;
     import core.thread : Thread;
