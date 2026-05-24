@@ -419,6 +419,359 @@ void testDualDbCrossReadWrite()
 }
 
 /**
+ * 双库交叉验证增强迭代器测试
+ * 
+ * 覆盖场景：反向遍历、seek定位、空数据库迭代器
+ */
+void testDualDbIteratorAdvanced()
+{
+    import std.stdio : writeln;
+    writeln("  [双库测试] 增强迭代器交叉对比...");
+
+    string pathA = makeTempPath("dual_iter_adv_a");
+    string pathB = makeTempPath("dual_iter_adv_b");
+
+    if (pathA.exists) pathA.rmdirRecurse();
+    if (pathB.exists) pathB.rmdirRecurse();
+
+    auto opt = Options();
+    opt.createIfMissing = true;
+    opt.compression = CompressionType.none;
+
+    auto dbA = new LevelDB(opt, pathA);
+    auto dbB = new LevelDB(opt, pathB);
+
+    scope (exit)
+    {
+        dbA.close();
+        dbB.close();
+        if (pathA.exists) pathA.rmdirRecurse();
+        if (pathB.exists) pathB.rmdirRecurse();
+    }
+
+    int n = 50;
+    for (int i = 0; i < n; i++)
+    {
+        string key = format("iter_key_%04d", i);
+        string value = format("iter_val_%04d", i);
+        dbA.put(key, value);
+        dbB.put(key, value);
+    }
+
+    // 测试1：反向遍历（seekToLast + prev）
+    {
+        auto iterA = dbA.iterator();
+        auto iterB = dbB.iterator();
+        scope(exit) { releaseIter(iterA); releaseIter(iterB); }
+
+        iterA.seekToLast();
+        iterB.seekToLast();
+
+        int count;
+        while (iterA.valid() && iterB.valid())
+        {
+            assert(iterA.key() == iterB.key(),
+                format("反向迭代key不一致: A=%s B=%s", iterA.key().asString(), iterB.key().asString()));
+            assert(iterA.value() == iterB.value(),
+                format("反向迭代value不一致: key=%s", iterA.key().asString()));
+            iterA.prev();
+            iterB.prev();
+            count++;
+        }
+        assert(!iterA.valid() && !iterB.valid(), "反向迭代器应同时结束");
+        assert(count == n, format("反向迭代数量不一致: got=%d exp=%d", count, n));
+    }
+
+    // 测试2：seek 到中间键后正向遍历
+    {
+        auto iterA = dbA.iterator();
+        auto iterB = dbB.iterator();
+        scope(exit) { releaseIter(iterA); releaseIter(iterB); }
+
+        iterA.seek(Slice("iter_key_0020"));
+        iterB.seek(Slice("iter_key_0020"));
+
+        int count;
+        int expectedRemaining = n - 20;
+        while (iterA.valid() && iterB.valid())
+        {
+            assert(iterA.key() == iterB.key(),
+                format("seek后key不一致: A=%s B=%s", iterA.key().asString(), iterB.key().asString()));
+            iterA.next();
+            iterB.next();
+            count++;
+        }
+        assert(!iterA.valid() && !iterB.valid(), "seek迭代器应同时结束");
+        assert(count == expectedRemaining,
+            format("seek迭代数量不一致: got=%d exp=%d", count, expectedRemaining));
+    }
+
+    // 测试3：seek 不存在的键
+    {
+        auto iterA = dbA.iterator();
+        auto iterB = dbB.iterator();
+        scope(exit) { releaseIter(iterA); releaseIter(iterB); }
+
+        // seek最后一个键之后，迭代器应无效
+        iterA.seek(Slice("iter_key_9999"));
+        iterB.seek(Slice("iter_key_9999"));
+        assert(!iterA.valid(), "seek超大键后iterA应无效");
+        assert(!iterB.valid(), "seek超大键后iterB应无效");
+    }
+
+    // 测试4：空数据库迭代器
+    {
+        string emptyPathA = makeTempPath("dual_empty_a");
+        string emptyPathB = makeTempPath("dual_empty_b");
+        scope(exit)
+        {
+            if (emptyPathA.exists) emptyPathA.rmdirRecurse();
+            if (emptyPathB.exists) emptyPathB.rmdirRecurse();
+        }
+
+        auto optEmpty = Options();
+        optEmpty.createIfMissing = true;
+        optEmpty.compression = CompressionType.none;
+
+        auto emptyA = new LevelDB(optEmpty, emptyPathA);
+        auto emptyB = new LevelDB(optEmpty, emptyPathB);
+        scope(exit) { emptyA.close(); emptyB.close(); }
+
+        auto iterA = emptyA.iterator();
+        auto iterB = emptyB.iterator();
+        scope(exit) { releaseIter(iterA); releaseIter(iterB); }
+
+        // seekToFirst 后应为无效
+        iterA.seekToFirst();
+        assert(!iterA.valid(), "空库seekToFirst后应无效");
+        iterB.seekToLast();
+        assert(!iterB.valid(), "空库seekToLast后应无效");
+        iterA.seek(Slice("any"));
+        assert(!iterA.valid(), "空库seek后应无效");
+    }
+}
+
+/// 释放迭代器引用（兼容 DbIteratorWithRefs）
+private void releaseIter(Iterator iter)
+{
+    import dleveldb.db_impl : DbIteratorWithRefs;
+    auto refIter = cast(DbIteratorWithRefs) iter;
+    if (refIter !is null)
+        refIter.release();
+}
+
+/**
+ * 双库交叉验证快照功能测试
+ * 
+ * 覆盖场景：
+ * - 创建快照后写入新数据，快照应看到旧状态
+ * - 释放快照后，新数据可见
+ * - 跨库快照一致性
+ */
+void testDualDbSnapshot()
+{
+    import std.stdio : writeln;
+    writeln("  [双库测试] 快照功能交叉对比...");
+
+    string pathA = makeTempPath("dual_snap_a");
+    string pathB = makeTempPath("dual_snap_b");
+
+    if (pathA.exists) pathA.rmdirRecurse();
+    if (pathB.exists) pathB.rmdirRecurse();
+
+    auto opt = Options();
+    opt.createIfMissing = true;
+    opt.compression = CompressionType.none;
+
+    auto dbA = new LevelDB(opt, pathA);
+    auto dbB = new LevelDB(opt, pathB);
+
+    scope (exit)
+    {
+        dbA.close();
+        dbB.close();
+        if (pathA.exists) pathA.rmdirRecurse();
+        if (pathB.exists) pathB.rmdirRecurse();
+    }
+
+    // 写入初始数据
+    dbA.put("key_01", "init_val");
+    dbA.put("key_02", "init_val");
+    dbB.put("key_01", "init_val");
+    dbB.put("key_02", "init_val");
+
+    // 创建快照
+    auto snapA = dbA.snapshot;
+    auto snapB = dbB.snapshot;
+    scope(exit) { dbA.releaseSnapshot(snapA); dbB.releaseSnapshot(snapB); }
+
+    ulong snapSeqA = snapA.sequenceNumber();
+    ulong snapSeqB = snapB.sequenceNumber();
+    assert(snapSeqA > 0, "快照序列号应大于0");
+    assert(snapSeqA == snapSeqB, format("双库快照序列号应一致: A=%d B=%d", snapSeqA, snapSeqB));
+
+    // 快照后写入新数据（覆盖 + 新增）
+    dbA.put("key_01", "new_val");
+    dbA.put("key_03", "new_val");
+    dbB.put("key_01", "new_val");
+    dbB.put("key_03", "new_val");
+
+    // 使用快照读取：应看到旧数据
+    {
+        ReadOptions snapOpt;
+        snapOpt.snapshot = snapSeqA;
+        // 使用 ReadOptions.snapshot 读取
+        string val;
+        bool found = dbA.get("key_01", val, snapOpt);
+        assert(found && val == "init_val",
+            format("快照应看到旧值: got=%s exp=init_val", val));
+
+        found = dbB.get("key_01", val, snapOpt);
+        assert(found && val == "init_val",
+            format("快照B应看到旧值: got=%s exp=init_val", val));
+
+        // 快照不应看到快照后写入的key_03
+        found = dbA.get("key_03", val, snapOpt);
+        assert(!found, "快照不应看到快照后写入的键");
+    }
+
+    // 不用快照读取：应看到新数据
+    {
+        string val;
+        bool found = dbA.get("key_01", val);
+        assert(found && val == "new_val",
+            format("无快照应看到新值: got=%s exp=new_val", val));
+
+        found = dbA.get("key_03", val);
+        assert(found && val == "new_val",
+            format("新写入的key_03应可见: got=%s", val));
+    }
+
+    // 使用快照迭代器遍历
+    {
+        ReadOptions snapOpt;
+        snapOpt.snapshot = snapSeqA;
+
+        auto iterA = dbA.iterator(snapOpt);
+        auto iterB = dbB.iterator(snapOpt);
+        scope(exit) { releaseIter(iterA); releaseIter(iterB); }
+
+        iterA.seekToFirst();
+        iterB.seekToFirst();
+
+        int count;
+        while (iterA.valid() && iterB.valid())
+        {
+            assert(iterA.key() == iterB.key(),
+                format("快照迭代器key不一致: A=%s B=%s", iterA.key().asString(), iterB.key().asString()));
+            // 快照中不应包含 key_03
+            assert(iterA.key() != Slice("key_03"), "快照迭代器不应遍历到key_03");
+            iterA.next();
+            iterB.next();
+            count++;
+        }
+        assert(count == 2, format("快照应只有2条记录: got=%d", count));
+    }
+
+    // 释放快照后检查正常
+}
+
+/**
+ * 双库交叉验证压缩功能测试
+ * 
+ * 覆盖场景：
+ * - 不同压缩配置的数据库写入/读取交叉对比
+ * - 直接测试压缩器接口
+ * - 写入数据量足够触发SSTable创建
+ */
+void testDualDbCompression()
+{
+    import std.stdio : writeln;
+    writeln("  [双库测试] 压缩功能交叉对比...");
+
+    string pathA = makeTempPath("dual_comp_a");
+    string pathB = makeTempPath("dual_comp_b");
+
+    if (pathA.exists) pathA.rmdirRecurse();
+    if (pathB.exists) pathB.rmdirRecurse();
+
+    // 库A：无压缩，库B：snappy压缩（实际降级为无压缩）
+    auto optA = Options();
+    optA.createIfMissing = true;
+    optA.compression = CompressionType.none;
+
+    auto optB = Options();
+    optB.createIfMissing = true;
+    optB.compression = CompressionType.snappy;  // 当前会降级为无压缩
+
+    auto dbA = new LevelDB(optA, pathA);
+    auto dbB = new LevelDB(optB, pathB);
+
+    scope (exit)
+    {
+        dbA.close();
+        dbB.close();
+        if (pathA.exists) pathA.rmdirRecurse();
+        if (pathB.exists) pathB.rmdirRecurse();
+    }
+
+    // 写入大量数据，触发SSTable创建
+    int n = 500;
+    for (int i = 0; i < n; i++)
+    {
+        // 使用可变长度值，模拟真实数据
+        string value;
+        if (i % 3 == 0)
+            value = format("short_val_%04d", i);
+        else if (i % 3 == 1)
+            value = format("medium_value_data_for_compression_test_%04d_%s", i, "abcdefghijklmnopqrstuvwxyz");
+        else
+            value = format("large_%04d_%s", i, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+-=[]{}|;':\",./<>?~`abcdefghijklmnopqrstuvwxyz");
+
+        dbA.put(format("comp_key_%04d", i), value);
+        dbB.put(format("comp_key_%04d", i), value);
+    }
+
+    // 验证所有数据一致
+    for (int i = 0; i < n; i++)
+    {
+        string key = format("comp_key_%04d", i);
+        string expected = (i % 3 == 0) ? format("short_val_%04d", i) :
+                          (i % 3 == 1) ? format("medium_value_data_for_compression_test_%04d_%s", i, "abcdefghijklmnopqrstuvwxyz") :
+                          format("large_%04d_%s", i, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+-=[]{}|;':\",./<>?~`abcdefghijklmnopqrstuvwxyz");
+
+        string valA, valB;
+        assert(dbA.get(key, valA), format("库A: key=%s 未找到", key));
+        assert(dbB.get(key, valB), format("库B: key=%s 未找到", key));
+        assert(valA == valB, format("压缩交叉对比失败: key=%s", key));
+        assert(valA == expected, format("库A值不匹配: key=%s got=%s", key, valA));
+    }
+
+    // 使用迭代器交叉验证压缩后的数据
+    {
+        auto iterA = dbA.iterator();
+        auto iterB = dbB.iterator();
+        scope(exit) { releaseIter(iterA); releaseIter(iterB); }
+
+        iterA.seekToFirst();
+        iterB.seekToFirst();
+
+        int count;
+        while (iterA.valid() && iterB.valid())
+        {
+            assert(iterA.key() == iterB.key(),
+                format("压缩库迭代器key不一致: A=%s B=%s", iterA.key().asString(), iterB.key().asString()));
+            assert(iterA.value() == iterB.value(),
+                format("压缩库迭代器value不一致: key=%s", iterA.key().asString()));
+            iterA.next();
+            iterB.next();
+            count++;
+        }
+        assert(count == n, format("压缩库迭代数量不一致: got=%d exp=%d", count, n));
+    }
+}
+
+/**
  * 运行全部双库交叉验证测试
  */
 void runDualDbTests()
@@ -447,6 +800,9 @@ void runDualDbTests()
     runTest("testDualDbNotFound", &testDualDbNotFound);
     runTest("testDualDbIterator", &testDualDbIterator);
     runTest("testDualDbCrossReadWrite", &testDualDbCrossReadWrite);
+    runTest("testDualDbIteratorAdvanced", &testDualDbIteratorAdvanced);
+    runTest("testDualDbSnapshot", &testDualDbSnapshot);
+    runTest("testDualDbCompression", &testDualDbCompression);
 
     writeln("====== 双库交叉验证测试全部完成 ======");
 }

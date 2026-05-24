@@ -184,6 +184,7 @@ private:
     {
         ValueType lastType = ValueType.value;
         Slice lastKey;
+        bool first = true;
 
         while (internalIter_.valid())
         {
@@ -199,9 +200,9 @@ private:
             if (parsed.sequence <= sequence_)
             {
                 Slice userKey = extractUserKey(ikey);
-                if (userComparator_.compare(userKey, lastKey) != 0)
+                if (!first && userComparator_.compare(userKey, lastKey) != 0)
                 {
-                    // 新的用户键
+                    // 遇到不同用户键，检查上一个是否有效
                     if (lastType == ValueType.value)
                     {
                         valid_ = true;
@@ -210,6 +211,7 @@ private:
                     }
                     lastType = ValueType.deletion;
                 }
+                first = false;
                 lastKey = userKey;
                 lastType = parsed.type;
             }
@@ -217,7 +219,7 @@ private:
         }
 
         // 检查最后一个键
-        if (lastType == ValueType.value)
+        if (!first && lastType == ValueType.value)
         {
             valid_ = true;
             savedKey_ = lastKey;
