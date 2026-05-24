@@ -25,6 +25,7 @@ import dleveldb.key_filter;
 import dleveldb.compression_filter;
 import dleveldb.builder;
 import dleveldb.table_builder;
+import std.logger;
 
 import core.sync.mutex;
 import core.sync.condition;
@@ -143,6 +144,9 @@ public:
         // 创建TableCache
         tableCache_ = new TableCache(dbname_, options_, options_.maxOpenFiles - 10);
 
+        // 创建SnapshotList
+        snapshots_ = new SnapshotList();
+
         // 创建VersionSet
         versions_ = new VersionSet(dbname_, options_, env_, userComparator_);
         versions_.setTableCache(tableCache_);
@@ -222,8 +226,6 @@ public:
         if (versions_ !is null)
         {
             versions_.closeResources();
-            // 手动调用析构函数，确保 current_.unref() 按正确顺序执行
-            destroy(versions_);
             versions_ = null;
         }
 
@@ -943,8 +945,7 @@ private:
     /// 记录文件删除失败警告
     static void logRemoveFailure(string fname, Status s)
     {
-        import std.stdio : stderr;
-        stderr.writeln("warning: removeObsoleteFiles: failed to remove ", fname, ": ", s.toString());
+        warning("removeObsoleteFiles: failed to remove ", fname, ": ", s.toString());
     }
 }
 
@@ -983,18 +984,8 @@ public:
     /// 析构带引用保护的数据库迭代器，释放mem/imm/current的引用
     ~this()
     {
-        if (!released_ && db_ !is null)
-        {
-            try
-            {
-                db_.releaseIteratorRefs(mem_, imm_, version_);
-            }
-            catch (Throwable)
-            {
-                // db_可能已被销毁，忽略异常
-            }
-            released_ = true;
-        }
+        // 不在析构函数中调用release(),避免GC回收时访问无效内存
+        // 调用者应显式调用release()
     }
 
     /// 显式释放迭代器引用（在close前调用，避免GC回收时访问已销毁的db_）

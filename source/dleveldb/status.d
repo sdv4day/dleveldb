@@ -146,6 +146,39 @@ Status statusIoError(string msg)
     return Status(Status.Code.ioError, msg);
 }
 
+/**
+ * 检查 Status 并在错误时抛出异常
+ * 
+ * 示例：
+ *   auto s = db.get(key, value);
+ *   throwIfError(s);  // 如果 s 不是 OK，抛出 LeveldbException
+ */
+void throwIfError(Status s)
+{
+    if (!s.ok())
+    {
+        import dleveldb.exceptions : LeveldbException;
+        throw new LeveldbException(s);
+    }
+}
+
+/**
+ * 检查 Status 并在错误时抛出异常（带上下文）
+ * 
+ * 示例：
+ *   auto s = db.get(key, value);
+ *   throwIfError(s, "读取键失败");
+ */
+void throwIfError(Status s, string context)
+{
+    if (!s.ok())
+    {
+        import dleveldb.exceptions : LeveldbException;
+        import std.format : format;
+        throw new LeveldbException(format("%s: %s", context, s.toString()));
+    }
+}
+
 ///
 unittest
 {
@@ -199,4 +232,38 @@ unittest
     // message() 获取错误消息
     assert(nf.message() !is null);
     assert(ok.message() is null);
+    
+    // throwIfError 测试
+    // OK 状态不应抛出
+    throwIfError(statusOk());
+    throwIfError(statusOk(), "context");
+    
+    // 错误状态应抛出 LeveldbException
+    import dleveldb.exceptions : LeveldbException;
+    auto errStatus = statusNotFound("test error");
+    bool caught = false;
+    try
+    {
+        throwIfError(errStatus);
+    }
+    catch (LeveldbException e)
+    {
+        caught = true;
+        assert(e.code() == Status.Code.notFound);
+    }
+    assert(caught, "throwIfError 应抛出 LeveldbException");
+    
+    // 带上下文的 throwIfError
+    caught = false;
+    try
+    {
+        throwIfError(statusCorruption("bad"), "操作失败");
+    }
+    catch (LeveldbException e)
+    {
+        caught = true;
+        import std.algorithm.searching : canFind;
+        assert(e.msg.canFind("操作失败"));
+    }
+    assert(caught);
 }

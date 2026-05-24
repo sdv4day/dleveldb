@@ -41,7 +41,8 @@ public:
     /// 析构函数，释放资源并关闭文件句柄
     ~this()
     {
-        close();
+        // 不在析构函数中调用close(),避免GC回收时访问无效内存
+        // 调用者应显式调用close()
     }
 
     /// 显式释放资源（关闭文件句柄）
@@ -56,7 +57,7 @@ public:
             if (fraf !is null)
             {
                 import dleveldb.env : FileRandomAccessFile;
-                destroy(fraf);
+                fraf.close();
             }
             file_ = null;
         }

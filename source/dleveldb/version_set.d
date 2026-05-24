@@ -15,6 +15,7 @@ import dleveldb.iterator;
 import dleveldb.merger;
 import dleveldb.filename;
 import std.path : buildPath;
+import std.logger;
 
 import core.sync.mutex;
 import core.atomic : atomicFetchAdd, atomicFetchSub;
@@ -468,8 +469,7 @@ public:
             s = edit.decodeFrom(record);
             if (!s.ok())
             {
-                import std.stdio : stderr;
-                stderr.writeln("warning: version_set recover: skipping corrupted MANIFEST record: ", s.toString());
+                warning("version_set recover: skipping corrupted MANIFEST record: ", s.toString());
                 continue;
             }
 

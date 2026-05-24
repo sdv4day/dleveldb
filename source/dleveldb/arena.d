@@ -36,10 +36,8 @@ public:
     /// 析构函数，释放所有已分配的内存块
     ~this() nothrow
     {
-        // MemTable持有对Arena的引用(arena_字段)，GC会跟随引用链，
-        // 因此不会在MemTable之前回收Arena。
-        // 显式释放所有分配的内存块。
-        deallocateAll();
+        // 不在析构函数中调用deallocateAll(),避免GC回收时访问无效内存
+        // 调用者应显式调用deallocateAll()
     }
 
     // === IAllocator 接口实现 ===

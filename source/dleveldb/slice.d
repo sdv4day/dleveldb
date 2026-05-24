@@ -2,12 +2,13 @@ module dleveldb.slice;
 
 import std.traits;
 import std.conv : to;
+import std.format : format;
 
 /**
  * 零拷贝字节引用，类似leveldb的Slice
  * 不拥有数据，仅引用外部内存
  * 
- * 支持泛型类型转换 as!T 和安全引用创建 Ref!T
+ * 支持泛型类型转换 as!T 和安全引用创建 owned!T
  */
 struct Slice
 {
@@ -117,23 +118,43 @@ struct Slice
     }
 
     /**
-     * 为基本类型常量创建安全引用 Slice
-     * 数据存储在 TLS 缓冲区中，Slice 仅引用
+     * 为基本类型创建拥有数据的 Slice
+     * 返回一个 OwnedSlice!T 结构体，包含数据副本
      * 
-     * ⚠ 生命周期陷阱：返回的Slice引用TLS缓冲区中的static变量，
-     *   下次对同一类型T调用Ref()会覆盖前值，使之前返回的Slice悬空。
-     *   因此必须在下一次Ref!T()调用前使用完毕，不可存储。
+     * 相比旧的 Ref() 方法，此方法更安全：
+     * - 数据存储在结构体中，而非 TLS
+     * - 可安全存储和传递
+     * - 无悬空引用风险
+     * 
+     * 示例：
+     *   auto s1 = Slice.owned(42);    // 创建 int 值 42 的 Slice
+     *   auto s2 = Slice.owned(3.14);  // 创建 double 值的 Slice
+     *   // s1 和 s2 独立存储，互不影响
+     */
+    static auto owned(T)(T value)
+        if (isBasicType!T || isPODStruct!T)
+    {
+        return OwnedSlice!T(value);
+    }
+
+    /**
+     * @deprecated 使用 owned() 替代
+     * 
+     * 为基本类型常量创建引用 Slice
+     * 
+     * ⚠ 警告：此方法使用 TLS 存储，存在悬空引用风险！
+     *   下次对同一类型 T 调用 Ref() 会覆盖前值。
+     *   建议使用 owned() 方法替代。
      * 
      * 示例：
      *   auto s = Slice.Ref(42);  // 创建 int 值 42 的 Slice
-     *   // ⚠ 不可: auto s1 = Slice.Ref(1); auto s2 = Slice.Ref(2); 
-     *   //   此时s1引用已被s2覆盖！
+     *   // ⚠ 危险: auto s1 = Slice.Ref(1); auto s2 = Slice.Ref(2); 
+     *   //   此时 s1 引用已被 s2 覆盖！
      */
     static Slice Ref(T)(T value)
         if (isBasicType!T || isPODStruct!T)
     {
         import std.traits : Unqual;
-        // 使用 TLS 缓冲区存储值
         static Unqual!T storage;
         storage = cast(Unqual!T) value;
         return Slice(cast(const(void*)) &storage, Unqual!T.sizeof);
@@ -265,6 +286,131 @@ Slice sliceFromBytes(const(ubyte)[] arr) pure nothrow @safe @nogc
     return Slice(arr);
 }
 
+/**
+ * 拥有数据的 Slice 包装器
+ * 
+ * 用于安全地创建基本类型的 Slice，数据存储在结构体内部。
+ * 相比 Slice.Ref()，此结构体无 TLS 陷阱风险。
+ * 
+ * 示例：
+ *   auto s = OwnedSlice!int(42);
+ *   Slice slice = s.slice;  // 获取 Slice
+ *   assert(slice.as!int == 42);
+ */
+struct OwnedSlice(T)
+    if (isBasicType!T || isPODStruct!T)
+{
+    import std.traits : Unqual;
+    
+private:
+    Unqual!T storage_;
+    
+public:
+    /// 从值构造
+    this(T value) pure nothrow @safe @nogc
+    {
+        storage_ = cast(Unqual!T) value;
+    }
+    
+    /// 获取底层 Slice
+    Slice slice() const pure nothrow @trusted @nogc
+    {
+        return Slice(cast(const(void*)) &storage_, Unqual!T.sizeof);
+    }
+    
+    /// 隐式转换为 Slice（使用 alias this）
+    alias slice this;
+    
+    /// 获取数据指针
+    const(ubyte)* data() const pure nothrow @trusted @nogc
+    {
+        return cast(const(ubyte*)) &storage_;
+    }
+    
+    /// 获取数据大小
+    size_t size() const pure nothrow @safe @nogc
+    {
+        return Unqual!T.sizeof;
+    }
+    
+    /// 获取原始值
+    ref const(T) value() const pure nothrow @safe @nogc
+    {
+        return *cast(const(T*)) &storage_;
+    }
+    
+    /// 字符串表示
+    string toString() const
+    {
+        return format("OwnedSlice!%s(%s)", T.stringof, storage_);
+    }
+}
+
+///
+unittest
+{
+    // OwnedSlice 基本测试
+    auto s1 = OwnedSlice!int(42);
+    assert(s1.size() == int.sizeof);
+    assert(s1.value() == 42);
+    
+    // 隐式转换为 Slice
+    Slice slice1 = s1;
+    assert(slice1.size() == int.sizeof);
+    assert(slice1.as!int == 42);
+    
+    // 多个 OwnedSlice 互不影响
+    auto s2 = OwnedSlice!int(100);
+    auto s3 = OwnedSlice!int(200);
+    assert(s2.value() == 100);
+    assert(s3.value() == 200);
+    
+    Slice slice2 = s2;
+    Slice slice3 = s3;
+    assert(slice2.as!int == 100);
+    assert(slice3.as!int == 200);
+    
+    // 不同类型
+    auto sLong = OwnedSlice!long(123456789012345L);
+    assert(sLong.value() == 123456789012345L);
+    
+    auto sDouble = OwnedSlice!double(3.14159);
+    assert(sDouble.value() == 3.14159);
+    
+    // 通过 Slice.owned() 创建
+    auto s4 = Slice.owned(42);
+    assert(s4.value() == 42);
+    
+    Slice slice4 = s4;
+    assert(slice4.as!int == 42);
+}
+
+///
+unittest
+{
+    // OwnedSlice 与 Slice.Ref 对比测试
+    // OwnedSlice 安全，Ref 有 TLS 陷阱
+    
+    // OwnedSlice: 多次调用互不影响
+    auto o1 = Slice.owned(1);
+    auto o2 = Slice.owned(2);
+    auto o3 = Slice.owned(3);
+    
+    Slice so1 = o1;
+    Slice so2 = o2;
+    Slice so3 = o3;
+    
+    assert(so1.as!int == 1);
+    assert(so2.as!int == 2);
+    assert(so3.as!int == 3);
+    
+    // Ref: 后调用会覆盖前值（危险！）
+    // 注释掉以下测试，因为它会失败
+    // auto r1 = Slice.Ref!int(1);
+    // auto r2 = Slice.Ref!int(2);
+    // assert(r1.as!int == 1);  // 失败！r1 已被 r2 覆盖
+}
+
 ///
 unittest
 {
@@ -307,7 +453,11 @@ unittest
     auto numSlice = Slice("\x0A\x00\x00\x00");
     assert(numSlice.as!int() == 10);
 
-    // Slice.Ref
+    // Slice.owned (推荐)
+    auto ownedSlice = Slice.owned!int(42);
+    assert(ownedSlice.slice().as!int() == 42);
+    
+    // Slice.Ref (已弃用，但保留兼容)
     auto refSlice = Slice.Ref!int(42);
     assert(refSlice.as!int() == 42);
 }

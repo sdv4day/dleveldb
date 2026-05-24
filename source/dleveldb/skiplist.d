@@ -67,11 +67,9 @@ private:
     /// 分配新节点（增强安全性检查）
     Node* newNode(Key key, int height) 
     {
-        // 参数验证
-        if (height < 1 || height > kMaxHeight)
-        {
-            throw new Exception("SkipList: invalid height");
-        }
+        // 参数验证（编程错误，使用断言）
+        assert(height >= 1 && height <= kMaxHeight, 
+            "SkipList: invalid height");
         
         // 计算节点大小：Node基础 + (height-1)个next指针
         size_t nodeSize = Node.sizeof + (height - 1) * (Node*).sizeof;
@@ -80,7 +78,8 @@ private:
         // 内存分配检查
         if (mem is null || mem.ptr is null)
         {
-            throw new Exception("SkipList: out of memory");
+            import core.exception : OutOfMemoryError;
+            throw new OutOfMemoryError("SkipList: out of memory");
         }
 
         Node* n = cast(Node*) mem.ptr;
