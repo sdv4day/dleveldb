@@ -41,6 +41,8 @@ private:
     Mutex mutex_;
 
 public:
+    /// 构造LRU缓存
+    /// Params: capacity = 缓存容量
     this(size_t capacity = DefaultCacheSize)
     {
         cache_ = new Cache2Q!(ulong, V)(cast(int) capacity);

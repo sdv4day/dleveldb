@@ -45,9 +45,21 @@ interface RandomAccessFile
  */
 interface WritableFile
 {
+    /// 追加数据到文件
+    /// Params: data = 要写入的数据
+    /// Returns: 操作状态
     Status append(Slice data);
+
+    /// 关闭文件
+    /// Returns: 操作状态
     Status close();
+
+    /// 刷新用户态缓冲区到操作系统
+    /// Returns: 操作状态
     Status flush();
+
+    /// 将数据同步到磁盘
+    /// Returns: 操作状态
     Status sync();
 }
 
@@ -63,6 +75,8 @@ interface FileLock
  */
 interface Logger
 {
+    /// 写入日志消息
+    /// Params: msg = 日志内容
     void logv(string msg);
 }
 
@@ -73,31 +87,99 @@ interface Logger
 interface Env
 {
     // 文件操作
+
+    /// 创建顺序读取文件
+    /// Params: fname = 文件名, result = 输出的文件对象
+    /// Returns: 操作状态
     Status newSequentialFile(string fname, out SequentialFile result);
+
+    /// 创建随机读取文件
+    /// Params: fname = 文件名, result = 输出的文件对象
+    /// Returns: 操作状态
     Status newRandomAccessFile(string fname, out RandomAccessFile result);
+
+    /// 创建可写文件
+    /// Params: fname = 文件名, result = 输出的文件对象
+    /// Returns: 操作状态
     Status newWritableFile(string fname, out WritableFile result);
+
+    /// 创建可追加写入文件
+    /// Params: fname = 文件名, result = 输出的文件对象
+    /// Returns: 操作状态
     Status newAppendableFile(string fname, out WritableFile result);
 
     // 文件系统操作
+
+    /// 判断文件是否存在
+    /// Params: fname = 文件名
+    /// Returns: 存在则为 true
     bool fileExists(string fname) const;
+
+    /// 获取目录下的子项名称列表
+    /// Params: dir = 目录路径, result = 输出的名称数组
+    /// Returns: 操作状态
     Status getChildren(string dir, out string[] result);
+
+    /// 删除文件
+    /// Params: fname = 文件名
+    /// Returns: 操作状态
     Status removeFile(string fname);
+
+    /// 创建目录（含中间目录）
+    /// Params: dir = 目录路径
+    /// Returns: 操作状态
     Status createDir(string dir);
+
+    /// 删除目录
+    /// Params: dir = 目录路径
+    /// Returns: 操作状态
     Status removeDir(string dir);
+
+    /// 获取文件大小
+    /// Params: fname = 文件名, size = 输出的文件字节数
+    /// Returns: 操作状态
     Status getFileSize(string fname, out ulong size);
+
+    /// 重命名文件
+    /// Params: src = 源文件名, dst = 目标文件名
+    /// Returns: 操作状态
     Status renameFile(string src, string dst);
+
+    /// 锁定文件
+    /// Params: fname = 文件名, lock = 输出的文件锁对象
+    /// Returns: 操作状态
     Status lockFile(string fname, out FileLock lock);
+
+    /// 解锁文件
+    /// Params: lock = 要释放的文件锁对象
+    /// Returns: 操作状态
     Status unlockFile(FileLock lock);
 
     // 线程操作
+
+    /// 将任务提交到后台线程池执行
+    /// Params: task = 要执行的任务委托
     void schedule(void delegate() task);
+
+    /// 在新线程中启动任务
+    /// Params: task = 要执行的任务委托
     void startThread(void delegate() task);
 
     // 时间操作
+
+    /// 获取当前时间的微秒数
+    /// Returns: 自 Unix 纪元以来的微秒数
     ulong nowMicros() const;
+
+    /// 休眠指定微秒数
+    /// Params: micros = 休眠时长（微秒）
     void sleepForMicroseconds(int micros);
 
     // 日志
+
+    /// 创建日志写入器
+    /// Params: fname = 日志文件名, result = 输出的 Logger 对象
+    /// Returns: 操作状态
     Status newLogger(string fname, out Logger result);
 }
 
@@ -114,6 +196,8 @@ private:
     File file_;
 
 public:
+    /// 构造顺序读取文件
+    /// Params: fname = 文件名
     this(string fname)
     {
         file_ = File(fname, "rb");
@@ -166,6 +250,8 @@ private:
     Mutex mutex_;
 
 public:
+    /// 构造随机读取文件
+    /// Params: fname = 文件名
     this(string fname)
     {
         filename_ = fname;
@@ -212,6 +298,8 @@ private:
     Mutex mutex_;
 
 public:
+    /// 构造可写文件
+    /// Params: fname = 文件名
     this(string fname)
     {
         filename_ = fname;
@@ -318,6 +406,8 @@ private:
     File file_;
 
 public:
+    /// 构造日志写入器
+    /// Params: fname = 日志文件名
     this(string fname)
     {
         file_ = File(fname, "a");
@@ -353,6 +443,8 @@ version (Windows)
     {
         HANDLE hFile_;
 
+        /// 构造 Windows 文件锁
+        /// Params: h = 已打开的文件句柄
         this(HANDLE h)
         {
             hFile_ = h;
@@ -375,6 +467,7 @@ version (Windows)
         TaskPool bgPool_;
 
     public:
+        /// 构造 Windows 环境实例
         this()
         {
             mutex_ = new Mutex;
@@ -636,6 +729,8 @@ else
     class PosixFileLock : FileLock
     {
         string filename_;
+        /// 构造 Posix 文件锁
+        /// Params: fname = 锁定的文件名
         this(string fname) { filename_ = fname; }
     }
 
@@ -650,6 +745,7 @@ else
         TaskPool bgPool_;       /// 延迟初始化：首次调用 schedule() 时创建
 
     public:
+        /// 构造 Posix 环境实例
         this()
         {
             mutex_ = new Mutex;

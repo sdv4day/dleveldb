@@ -23,6 +23,8 @@ private:
     enum kBlockSize = 4096; // 默认块大小4KB
 
 public:
+    /// 构造Arena内存池分配器
+    /// Params: backend = 底层分配器，为null时使用Mallocator
     this(IAllocator backend = null)
     {
         backend_ = backend;
@@ -31,6 +33,7 @@ public:
         allocBytesRemain_ = 0;
     }
 
+    /// 析构函数，释放所有已分配的内存块
     ~this() nothrow
     {
         // MemTable持有对Arena的引用(arena_字段)，GC会跟随引用链，

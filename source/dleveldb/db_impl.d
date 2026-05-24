@@ -93,6 +93,9 @@ private:
     ulong[2] stats_; // [0]=read, [1]=seek
 
 public:
+    /// 构造DBImpl实例
+    /// Params: options = 数据库配置选项
+    /// Params: dbname = 数据库目录路径
     this(Options options, string dbname)
     {
         dbname_ = dbname;
@@ -118,6 +121,9 @@ public:
         tableCache_ = null;
     }
 
+    /// 析构DBImpl实例
+    /// 注意：不在析构函数中调用close()，避免GC回收时访问无效内存
+    /// 调用者应显式调用close()
     ~this()
     {
         // 不在析构函数中调用close(),避免GC回收时访问无效内存
@@ -914,6 +920,12 @@ private:
     bool released_;
 
 public:
+    /// 构造带引用保护的数据库迭代器
+    /// Params: inner = 内部迭代器
+    /// Params: db = 所属DBImpl实例
+    /// Params: mem = 活跃MemTable引用
+    /// Params: imm = Immutable MemTable引用
+    /// Params: ver = 当前Version引用
     this(Iterator inner, DBImpl db, MemTable mem, MemTable imm, Version ver)
     {
         inner_ = inner;
@@ -924,6 +936,7 @@ public:
         released_ = false;
     }
 
+    /// 析构带引用保护的数据库迭代器，释放mem/imm/current的引用
     ~this()
     {
         if (!released_ && db_ !is null)
@@ -950,13 +963,27 @@ public:
         }
     }
 
+    /// 检查迭代器是否指向有效位置
+    /// Returns: 当前位置是否有效
     bool valid() const nothrow @nogc { return inner_.valid(); }
+    /// 定位到第一个条目
     void seekToFirst() { inner_.seekToFirst(); }
+    /// 定位到最后一个条目
     void seekToLast() { inner_.seekToLast(); }
+    /// 定位到大于等于target的首个条目
+    /// Params: target = 查找目标键
     void seek(Slice target) { inner_.seek(target); }
+    /// 移动到下一个条目
     void next() { inner_.next(); }
+    /// 移动到上一个条目
     void prev() { inner_.prev(); }
+    /// 获取当前条目的键
+    /// Returns: 当前键
     Slice key() nothrow @nogc { return inner_.key(); }
+    /// 获取当前条目的值
+    /// Returns: 当前值
     Slice value() nothrow @nogc { return inner_.value(); }
+    /// 获取迭代器的状态
+    /// Returns: 当前状态
     Status status() const nothrow @nogc { return inner_.status(); }
 }

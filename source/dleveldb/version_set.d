@@ -44,6 +44,8 @@ private:
     Version prev_;
 
 public:
+    /// 构造版本快照
+    /// Params: vset = 所属版本集合管理器
     this(VersionSet vset)
     {
         vset_ = vset;
@@ -55,6 +57,7 @@ public:
         prev_ = this;
     }
 
+    /// 析构函数，重置引用计数（链表清理由VersionSet.closeResources()统一处理）
     ~this()
     {
         // GC回收时机不可控，不再断言refs_==0，不再操作链表
@@ -244,6 +247,8 @@ private:
     TableCache tableCache_;  // 由DBImpl设置
 
 public:
+    /// 构造版本集合管理器
+    /// Params: dbname = 数据库名称, options = 数据库选项, env = 环境接口, userCmp = 用户键比较器
     this(string dbname, Options options, Env env, Comparator userCmp)
     {
         dbname_ = dbname;
@@ -262,6 +267,7 @@ public:
         prevLogNumber_ = 0;
     }
 
+    /// 析构函数（资源释放由closeResources()完成）
     ~this()
     {
         // closeResources()已在DBImpl.close()中先调用，此处不再操作
@@ -711,6 +717,8 @@ private:
     bool isTrivialMove_;
 
 public:
+    /// 构造压缩任务
+    /// Params: level = 压缩层级
     this(int level)
     {
         level_ = level;
@@ -718,11 +726,29 @@ public:
         isTrivialMove_ = false;
     }
 
+    /// 获取压缩层级
+    /// Returns: 压缩层级
     int level() const pure @safe @nogc { return level_; }
+
+    /// 获取输入文件（level和level+1两层）
+    /// Returns: 两层输入文件数组
     FileMetaData[][2] inputs()  @nogc { return inputs_; }
+
+    /// 获取指定层级的输入文件
+    /// Params: which = 层级索引（0为当前层，1为下一层）
+    /// Returns: 指定层级的输入文件列表
     FileMetaData[] inputLevel(int which)  @nogc { return inputs_[which]; }
+
+    /// 获取最大输出文件大小
+    /// Returns: 最大输出文件大小（字节）
     ulong maxOutputFileSize() const pure @safe @nogc { return maxOutputFileSize_; }
+
+    /// 获取版本编辑记录
+    /// Returns: 版本编辑记录
     VersionEdit edit()  @nogc { return edit_; }
+
+    /// 检查是否为平凡移动
+    /// Returns: 如果是平凡移动返回true
     bool isTrivialMove() const pure @safe @nogc { return isTrivialMove_; }
 
     /// 判断是否可简单移动

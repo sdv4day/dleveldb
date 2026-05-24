@@ -20,6 +20,8 @@ private:
     uint[5] typeCrc_;      // 每种记录类型的预计算CRC
 
 public:
+    /// 构造WAL日志写入器
+    /// Params: dest = 目标可写文件, destLength = 当前文件长度
     this(WritableFile dest, ulong destLength = 0)
     {
         dest_ = dest;

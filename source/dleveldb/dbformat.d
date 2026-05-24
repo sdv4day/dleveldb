@@ -9,7 +9,9 @@ import dleveldb.coding;
  */
 enum ValueType : ubyte
 {
+    /// 删除类型
     deletion = 0,
+    /// 值类型
     value = 1,
 }
 
@@ -46,6 +48,8 @@ struct ParsedInternalKey
     ulong sequence;
     ValueType type;
 
+    /// 返回调试用的字符串表示
+    /// Returns: 格式为 "'userKey' @ sequence : TYPE" 的字符串
     string debugString() const
     {
         import std.conv : text;
@@ -62,6 +66,10 @@ struct InternalKeyComparator
 {
     Comparator userComparator;
 
+    /// 比较两个内部键的大小
+    /// Params: a = 第一个内部键
+    ///         b = 第二个内部键
+    /// Returns: 小于0表示a<b，等于0表示a==b，大于0表示a>b
     int compare(Slice a, Slice b) const nothrow @nogc
     {
         // 比较内部键：先比较userKey，再比较packedTag（降序）
@@ -144,6 +152,10 @@ struct InternalKey
 {
     ubyte[] rep_;
 
+    /// 构造内部键
+    /// Params: userKey = 用户键
+    ///         seq = 序列号
+    ///         type = 值类型
     this(Slice userKey, ulong seq, ValueType type)
     {
         rep_.length = userKey.size() + ulong.sizeof;
@@ -153,28 +165,38 @@ struct InternalKey
         encodeFixed64(rep_.ptr + userKey.size(), packSequenceAndType(seq, type));
     }
 
+    /// 编码为字节切片
+    /// Returns: 内部键的字节表示
     Slice encode() const nothrow @nogc
     {
         return Slice(rep_.ptr, rep_.length);
     }
 
+    /// 获取用户键部分
+    /// Returns: 去除尾部packed tag后的用户键切片
     Slice userKey() const nothrow @nogc
     {
         assert(rep_.length >= ulong.sizeof);
         return Slice(rep_.ptr, rep_.length - ulong.sizeof);
     }
 
+    /// 从Slice设置内部键内容
+    /// Params: s = 包含完整内部键编码的切片
     void setFrom(Slice s) nothrow
     {
         rep_.length = s.size();
         rep_[] = s.asBytes()[];
     }
 
+    /// 检查内部键是否有效（长度至少包含一个packed tag）
+    /// Returns: 有效返回true，否则false
     bool valid() const pure nothrow @safe @nogc
     {
         return rep_.length >= ulong.sizeof;
     }
 
+    /// 解析内部键，提取用户键、序列号和值类型
+    /// Returns: 解析后的ParsedInternalKey
     ParsedInternalKey parse() const nothrow
     {
         assert(valid());
@@ -200,6 +222,9 @@ private:
     size_t end_;       // 结束位置
 
 public:
+    /// 构造查找键
+    /// Params: userKey = 用户键
+    ///         sequence = 序列号
     this(Slice userKey, ulong sequence)
     {
         // 计算大小
@@ -261,11 +286,17 @@ ulong extractPackedTag(Slice internalKey) nothrow @trusted @nogc
 }
 
 /// 配置常量
+/// LSM树的层数
 enum int kNumLevels = 7;
+/// L0层触发压缩的文件数阈值
 enum int kL0_CompactionTrigger = 4;
+/// L0层写入减速的文件数阈值
 enum int kL0_SlowdownWritesTrigger = 8;
+/// L0层停止写入的文件数阈值
 enum int kL0_StopWritesTrigger = 12;
+/// 内存压缩的最大层级
 enum int kMaxMemCompactLevel = 2;
+/// 读取字节数统计周期（1MB）
 enum size_t kReadBytesPeriod = 1048576; // 1MB
 
 ///

@@ -9,19 +9,22 @@ import std.algorithm.searching : startsWith;
  */
 struct Status
 {
+    /// 状态码枚举
     enum Code : ubyte
     {
-        ok = 0,
-        notFound = 1,
-        corruption = 2,
-        notSupported = 3,
-        invalidArgument = 4,
-        ioError = 5,
+        ok = 0,              /// 操作成功
+        notFound = 1,        /// 未找到目标
+        corruption = 2,      /// 数据损坏
+        notSupported = 3,    /// 操作不支持
+        invalidArgument = 4, /// 无效参数
+        ioError = 5,         /// IO错误
     }
 
     private string msg_;
     private Code code_ = Code.ok;
 
+    /// 构造指定状态码和消息的状态
+    /// Params: code = 状态码, msg = 状态消息
     this(Code code, string msg)
     {
         code_ = code;
@@ -48,6 +51,8 @@ struct Status
         }
     }
 
+    /// 检查是否为成功状态
+    /// Returns: 成功返回 true，否则返回 false
     bool ok() const pure nothrow @safe @nogc { return msg_ is null; }
 
     /// 获取状态码
@@ -56,31 +61,43 @@ struct Status
         return code_;
     }
 
+    /// 检查是否为 NotFound 状态
+    /// Returns: 是 NotFound 返回 true，否则返回 false
     bool isNotFound() const pure nothrow @safe @nogc
     {
         return code_ == Code.notFound;
     }
 
+    /// 检查是否为 Corruption 状态
+    /// Returns: 是 Corruption 返回 true，否则返回 false
     bool isCorruption() const pure nothrow @safe @nogc
     {
         return code_ == Code.corruption;
     }
 
+    /// 检查是否为 NotSupported 状态
+    /// Returns: 是 NotSupported 返回 true，否则返回 false
     bool isNotSupported() const pure nothrow @safe @nogc
     {
         return code_ == Code.notSupported;
     }
 
+    /// 检查是否为 InvalidArgument 状态
+    /// Returns: 是 InvalidArgument 返回 true，否则返回 false
     bool isInvalidArgument() const pure nothrow @safe @nogc
     {
         return code_ == Code.invalidArgument;
     }
 
+    /// 检查是否为 IOError 状态
+    /// Returns: 是 IOError 返回 true，否则返回 false
     bool isIoError() const pure nothrow @safe @nogc
     {
         return code_ == Code.ioError;
     }
 
+    /// 将状态转为字符串表示
+    /// Returns: 成功状态返回 "OK"，否则返回带前缀的错误消息
     string toString() const pure nothrow @safe
     {
         return msg_ is null ? "OK" : msg_;

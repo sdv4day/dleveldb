@@ -17,6 +17,8 @@ struct FileMetaData
     int refs;             // 引用计数
     int allowedSeeks;     // 允许的seek次数
 
+    /// 构造文件元数据
+    /// Params: num = 文件编号, size = 文件大小, small = 最小内部键, large = 最大内部键
     this(ulong num, ulong size, InternalKey small, InternalKey large)
     {
         number = num;
