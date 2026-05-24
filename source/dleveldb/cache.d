@@ -17,7 +17,7 @@ enum DefaultCacheSize = 0x10_0000 * 10;
 abstract class ACache
 {
     /// 获取缓存元素数量
-    abstract @property int length() const;
+    abstract @property int length();
 
     /// 清空缓存
     abstract void clear();
@@ -77,9 +77,12 @@ public:
     }
 
     /// 元素数量
-    override @property int length() const
+    override @property int length()
     {
-        return cache_.length;
+        synchronized (mutex_)
+        {
+            return cache_.length;
+        }
     }
 
     /// 清空

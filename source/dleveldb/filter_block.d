@@ -138,6 +138,7 @@ public:
     }
 
     /// 检查指定数据块中是否可能包含key
+    /// Returns: true表示可能包含（需进一步查找），false表示一定不包含
     bool keyMayMatch(uint blockOffset, Slice key)
     {
         uint filterIndex = blockOffset >> baseLg_;
@@ -150,7 +151,9 @@ public:
             Slice filter = Slice(data_.data() + start, end - start);
             return policy_.keyMayMatch(key, filter);
         }
-        return true; // 超出范围，保守返回true
+        // 过滤器缺失（数据块超出过滤器覆盖范围），保守返回true
+        // 这与LevelDB原版行为一致：宁可多读也不漏读
+        return true;
     }
 }
 

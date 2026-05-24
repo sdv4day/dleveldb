@@ -102,7 +102,22 @@ bool parseFileName(string fname, ref ulong number, ref FileType type)
         return true;
     }
 
-    // 解析带编号的文件名
+    // 先尝试解析 MANIFEST-{number} 格式（无后缀点号）
+    if (fname.startsWith("MANIFEST-"))
+    {
+        try
+        {
+            number = to!ulong(fname[9 .. $]);
+            type = FileType.descriptor;
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    // 解析带编号和后缀的文件名
     size_t dotPos = fname.lastIndexOf('.');
     if (dotPos == size_t.max)
         return false;
@@ -117,20 +132,6 @@ bool parseFileName(string fname, ref ulong number, ref FileType type)
     }
     catch (Exception)
     {
-        // MANIFEST-{number}格式
-        if (prefix.startsWith("MANIFEST-"))
-        {
-            try
-            {
-                number = to!ulong(prefix[9 .. $]);
-                type = FileType.descriptor;
-                return true;
-            }
-            catch (Exception)
-            {
-                return false;
-            }
-        }
         return false;
     }
 
@@ -205,9 +206,8 @@ unittest
     assert(parseFileName("300.sst", num, ft));
     assert(num == 300 && ft == FileType.table);
 
-    // 注意：parseFileName 当前实现要求文件名包含"."，
-    // MANIFEST-{number} 格式（无后缀）目前无法解析
-    // 这是已知限制，此处跳过该断言
+    assert(parseFileName("MANIFEST-000004", num, ft));
+    assert(num == 4 && ft == FileType.descriptor);
 
     assert(parseFileName("CURRENT", num, ft));
     assert(ft == FileType.current);

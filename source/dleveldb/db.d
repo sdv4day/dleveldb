@@ -64,7 +64,7 @@ public:
     @property bool isOpen() const pure nothrow @safe @nogc { return isOpen_; }
 
     /// 关闭数据库
-    @property void close()
+    void close()
     {
         if (isOpen_ && impl_ !is null)
         {
@@ -111,8 +111,6 @@ public:
                 return false;
             throw new LeveldbException(s);
         }
-        if (buf.length == 0)
-            return false;
 
         value = fromSlice!V(Slice(cast(const(ubyte)*) buf.ptr, buf.length));
         return true;
@@ -143,6 +141,9 @@ public:
 
     /**
      * 获取键值的 Slice（不拷贝）
+     * 
+     * 注意：返回的 Slice 引用 GC 管理的内存，调用者应立即使用
+     * 或通过 .dup 拷贝，不应长期持有。
      */
     auto getSlice(K)(in K key, const(ReadOptions) opt = ReadOptions())
     {
@@ -312,7 +313,10 @@ private:
         {
             if (V.sizeof > s.size())
                 throw new LeveldbException("Assignment size is larger than slice data size");
-            return *(cast(V*) s.data());
+            V result;
+            const(ubyte)* src = s.data();
+            () @trusted { import core.stdc.string : memcpy; memcpy(&result, src, V.sizeof); } ();
+            return result;
         }
     }
 }

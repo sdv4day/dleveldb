@@ -191,6 +191,35 @@ public:
         }
     }
 
+    /// 检查指定user key是否在某层中存在覆盖它的文件
+    /// 用于compaction时判断删除标记是否可安全丢弃
+    bool overlapInLevel(int level, Slice userKey)
+    {
+        auto icmp = vset_.internalComparator();
+        if (level == 0)
+        {
+            // Level 0 文件有重叠，需遍历所有文件
+            foreach (f; files_[0])
+            {
+                if (icmp.compare(userKey, f.smallest.userKey()) >= 0 &&
+                    icmp.compare(userKey, f.largest.userKey()) <= 0)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+        else
+        {
+            // Level 1+ 文件不重叠，二分查找
+            size_t idx = findFile(level, userKey);
+            if (idx >= files_[level].length)
+                return false;
+            FileMetaData f = files_[level][idx];
+            return icmp.compare(userKey, f.smallest.userKey()) >= 0;
+        }
+    }
+
 private:
     /// 在指定层级二分查找第一个largest >= target的文件索引
     size_t findFile(int level, Slice targetKey)
@@ -438,7 +467,11 @@ public:
             VersionEdit edit;
             s = edit.decodeFrom(record);
             if (!s.ok())
+            {
+                import std.stdio : stderr;
+                stderr.writeln("warning: version_set recover: skipping corrupted MANIFEST record: ", s.toString());
                 continue;
+            }
 
             // 应用编辑
             applyEdit(edit, v);

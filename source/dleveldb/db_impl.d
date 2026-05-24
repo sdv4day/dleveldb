@@ -185,12 +185,12 @@ public:
             {
                 backgroundWorkFinishedSignal_.wait();
             }
-        }
 
-        // 刷新immutable memtable
-        if (imm_ !is null)
-        {
-            compactMemTable();
+            // 刷新immutable memtable（在锁内操作，避免竞态）
+            if (imm_ !is null)
+            {
+                compactMemTable();
+            }
         }
 
         // 释放MemTable（在mutex_下操作共享状态）
@@ -266,7 +266,7 @@ public:
     /// 原子写批次
     Status write(WriteOptions options, WriteBatch updates)
     {
-        Writer w;
+        auto w = new Writer();
         w.batch = updates;
         w.sync = options.sync;
         w.done = false;
@@ -275,10 +275,10 @@ public:
         synchronized (mutex_)
         {
             // 加入写入队列
-            writers_ ~= &w;
+            writers_ ~= w;
 
             // 等待成为队列头部
-            while (!w.done && writers_[0] !is &w)
+            while (!w.done && writers_[0] !is w)
             {
                 w.cond.wait();
             }
@@ -290,7 +290,7 @@ public:
         }
 
         // 执行写入
-        Status s = writeInternal(w);
+        Status s = writeInternal(*w);
 
         synchronized (mutex_)
         {
@@ -504,6 +504,8 @@ private:
     /// force: 是否强制切换（即使有空间）
     Status makeRoomForWrite(bool force)
     {
+        assert(versions_ !is null, "makeRoomForWrite: database not opened");
+
         Status s;
         bool allowDelay = !force;
 
@@ -685,11 +687,14 @@ private:
         edit.lastSequence_ = lastSequence_;
 
         Status s = versions_.logAndApply(edit);
-        if (s.ok() && imm_ !is null)
+        if (imm_ !is null)
         {
             imm_.unref();
             imm_ = null;
             hasImm_ = false;
+        }
+        if (s.ok())
+        {
             removeObsoleteFiles();
         }
 
@@ -700,7 +705,6 @@ private:
     Status doCompactionWork(Compaction c)
     {
         int level = c.level();
-        ulong smallestUserKey = 0; // 用于判断是否可以丢弃删除标记
 
         // 创建合并迭代器
         Iterator[] iters;
@@ -749,7 +753,27 @@ private:
             // 1. 如果是删除标记且没有更早的快照需要此键，可以丢弃
             if (parsed.type == ValueType.deletion)
             {
-                // 检查是否在祖父层有重叠（简化：保守处理，不丢弃）
+                // 删除标记可丢弃的条件：
+                // a) 没有活跃快照需要看到此删除（序列号 >= 最早快照）
+                // b) 在更低level中不存在该user key的旧版本
+                //    （否则丢弃删除标记会导致旧版本"复活"）
+                bool snapshotNeeded = (!snapshots_.empty() &&
+                    parsed.sequence >= snapshots_.oldest());
+                if (!snapshotNeeded)
+                {
+                    // 检查更低level中是否有该user key
+                    bool hasOlderVersion = false;
+                    for (int l = 0; l < level; l++)
+                    {
+                        if (versions_.current().overlapInLevel(l, parsed.userKey))
+                        {
+                            hasOlderVersion = true;
+                            break;
+                        }
+                    }
+                    if (!hasOlderVersion)
+                        shouldDrop = true;
+                }
             }
 
             // 2. 检查压缩过滤器
@@ -795,6 +819,11 @@ private:
             {
                 s = outputFile.close();
             }
+            if (!s.ok())
+            {
+                outputFile.close();
+                env_.removeFile(outputName);
+            }
 
             if (s.ok())
             {
@@ -807,7 +836,6 @@ private:
         {
             outputFile.close();
             env_.removeFile(outputName);
-            versions_.newFileNumber(); // 消耗掉未使用的编号
         }
 
         // 删除输入文件
@@ -879,28 +907,44 @@ private:
                 if (type == FileType.table && (number in liveFiles) is null)
                 {
                     // 删除废弃SSTable
-                    env_.removeFile(buildPath(dbname_, fname));
+                    s = env_.removeFile(buildPath(dbname_, fname));
+                    if (!s.ok())
+                        logRemoveFailure(fname, s);
                     tableCache_.evict(number);
                 }
                 else if (type == FileType.log && (number in liveFiles) is null &&
                          number < versions_.logNumber())
                 {
                     // 删除旧WAL日志
-                    env_.removeFile(buildPath(dbname_, fname));
+                    s = env_.removeFile(buildPath(dbname_, fname));
+                    if (!s.ok())
+                        logRemoveFailure(fname, s);
                 }
                 else if (type == FileType.descriptor && (number in liveFiles) is null &&
                          number != versions_.manifestFileNumber())
                 {
                     // 删除旧MANIFEST
-                    env_.removeFile(buildPath(dbname_, fname));
+                    s = env_.removeFile(buildPath(dbname_, fname));
+                    if (!s.ok())
+                        logRemoveFailure(fname, s);
                 }
                 else if (type == FileType.temp)
                 {
                     // 删除临时文件
-                    env_.removeFile(buildPath(dbname_, fname));
+                    s = env_.removeFile(buildPath(dbname_, fname));
+                    if (!s.ok())
+                        logRemoveFailure(fname, s);
                 }
             }
         }
+    }
+
+private:
+    /// 记录文件删除失败警告
+    static void logRemoveFailure(string fname, Status s)
+    {
+        import std.stdio : stderr;
+        stderr.writeln("warning: removeObsoleteFiles: failed to remove ", fname, ": ", s.toString());
     }
 }
 

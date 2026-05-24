@@ -73,9 +73,10 @@ public:
     Status get(ReadOptions options, ulong fileNumber, ulong fileSize,
         Slice key, ref ubyte[] value) 
     {
-        Table table = findTable(fileNumber, fileSize);
-        if (table is null)
-            return statusIoError("table not found");
+        Table table;
+        Status s = findTable(fileNumber, fileSize, table);
+        if (!s.ok())
+            return s;
 
         return table.get(options, key, value);
     }
@@ -105,10 +106,11 @@ public:
     /// 创建指定表的迭代器
     Iterator newIterator(ReadOptions options, ulong fileNumber, ulong fileSize)
     {
-        Table table = findTable(fileNumber, fileSize);
-        if (table is null)
+        Table table;
+        Status s = findTable(fileNumber, fileSize, table);
+        if (!s.ok())
         {
-            return new EmptyIterator(statusIoError("table not found"));
+            return new EmptyIterator(s);
         }
 
         // 创建两级迭代器：索引块 -> 数据块
@@ -140,15 +142,17 @@ public:
     }
 
 private:
-    /// 查找或打开表
-    Table findTable(ulong fileNumber, ulong fileSize) 
+    /// 查找或打开表，返回Status以保留原始错误信息
+    Status findTable(ulong fileNumber, ulong fileSize, out Table result) 
     {
+        result = null;
         synchronized (mutex_)
         {
             // 先在缓存中查找（O(1) 关联数组）
             if (auto t = fileNumber in tables_)
             {
-                return *t;
+                result = *t;
+                return Status();
             }
 
             // 打开新表
@@ -161,13 +165,13 @@ private:
                 fname = sstTableFileName(dbname_, fileNumber);
                 s = env_.newRandomAccessFile(fname, file);
                 if (!s.ok())
-                    return null;
+                    return s;
             }
 
             Table table = new Table(options_, file, fileSize, fileNumber);
             s = table.open();
             if (!s.ok())
-                return null;
+                return s;
 
             // 添加到缓存（O(1) 关联数组）
             tables_[fileNumber] = table;
@@ -182,7 +186,8 @@ private:
                 order_ = order_[1 .. $];
             }
 
-            return table;
+            result = table;
+            return Status();
         }
     }
 }

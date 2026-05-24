@@ -18,6 +18,7 @@ private:
     ulong destLength_;     // 当前文件长度
     int blockOffset_;      // 当前块内偏移
     uint[5] typeCrc_;      // 每种记录类型的预计算CRC
+    ubyte[] zeros_;        // 预分配的零填充缓冲区（堆上）
 
 public:
     /// 构造WAL日志写入器
@@ -38,6 +39,10 @@ public:
             buf[3] = 0; buf[4] = 0; buf[5] = 0; // padding
             typeCrc_[i] = crc32cValue(buf.ptr, 6);
         }
+
+        // 预分配零填充缓冲区（堆上，避免每次调用动态分配）
+        zeros_ = new ubyte[](kBlockSize);
+        zeros_[] = 0;
     }
 
     /// 添加一条逻辑记录
@@ -56,11 +61,8 @@ public:
                 // 当前块剩余空间不足，切换到新块
                 if (leftover > 0)
                 {
-                    // 填充当前块剩余空间
-                    ubyte[] zeros;
-                    zeros.length = leftover;
-                    zeros[] = 0;
-                    s = dest_.append(Slice(zeros.ptr, zeros.length));
+                    // 填充当前块剩余空间（使用预分配缓冲区）
+                    s = dest_.append(Slice(zeros_.ptr, leftover));
                 }
                 blockOffset_ = 0;
             }

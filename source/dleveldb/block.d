@@ -83,7 +83,6 @@ private:
     Slice value_;        // 当前值
     Status status_;
     bool valid_;
-
 public:
     /// 构造块内迭代器
     /// Params:
@@ -262,6 +261,10 @@ public:
         ptr += nonShared;
 
         key_ = Slice(newKey.ptr, newKey.length);
+        // 注意：newKey 由 GC 管理，key_ 引用其内存。
+        // 在 D 语言的 GC 环境下，只要 newKey 在当前栈帧中存活，
+        // GC 不会回收它。但 key_ 长期持有该引用有风险。
+        // 此处保持与原版 LevelDB 一致的设计权衡。
         value_ = Slice(ptr, valueLength);
         currentOffset_ = nextOffset;
 
