@@ -17,3 +17,5 @@ dleveldb-test-*
 *.lst
 dub.selections.json
 .sisyphus/
+.arts/
+.vscode/
