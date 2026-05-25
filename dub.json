@@ -12,6 +12,7 @@
 	"dependencies": {
 		"deimos-snappy": "*",
 		"cachetools": "~>1.0.1",
+		"deimos-zstd": "*",
 		"silly": "~>1.1.1"
 	},
 	"targetType": "library",

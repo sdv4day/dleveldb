@@ -5,6 +5,7 @@ import dleveldb.status;
 import deimos.snappy.snappy;
 import std.logger;
 import std.format : format;
+import deimos.zstd;
 
 /**
  * 压缩类型
@@ -129,11 +130,86 @@ class SnappyCompressor : Compressor
 }
 
 /**
- * Zstd压缩实现（条件编译）
+ * Zstd压缩实现
  */
-version (HasZstd)
+class ZstdCompressor : Compressor
 {
-    // 如果有zstd库，可以实现ZstdCompressor
+    /// 默认压缩级别（zstd推荐值为3）
+    enum defaultCompressionLevel = 3;
+
+    CompressionType type() const pure nothrow @safe @nogc
+    {
+        return CompressionType.zstd;
+    }
+
+    ubyte[] compress(Slice input) const nothrow
+    {
+        size_t inputLen = input.size();
+        size_t maxOutputLen = ZSTD_compressBound(inputLen);
+
+        ubyte[] output = new ubyte[maxOutputLen];
+        size_t compressedSize = ZSTD_compress(
+            output.ptr,
+            maxOutputLen,
+            input.data(),
+            inputLen,
+            defaultCompressionLevel
+        );
+
+        if (ZSTD_isError(compressedSize))
+        {
+            return null;
+        }
+
+        // 检查压缩率：如果压缩后大小 >= 原始大小的 87.5%，则返回null
+        if (compressedSize >= inputLen - inputLen / 8)
+        {
+            return null;
+        }
+
+        output.length = compressedSize;
+        return output;
+    }
+
+    Status decompress(Slice compressed, ref ubyte[] output) const
+    {
+        // 获取解压缩后的内容大小
+        ulong uncompressedLen = ZSTD_getFrameContentSize(
+            compressed.data(),
+            compressed.size()
+        );
+
+        if (uncompressedLen == ZSTD_CONTENTSIZE_ERROR)
+        {
+            return statusCorruption("Zstd: invalid compressed data");
+        }
+
+        if (uncompressedLen == ZSTD_CONTENTSIZE_UNKNOWN)
+        {
+            return statusCorruption("Zstd: unknown content size");
+        }
+
+        output.length = uncompressedLen;
+
+        size_t decompressedSize = ZSTD_decompress(
+            output.ptr,
+            uncompressedLen,
+            compressed.data(),
+            compressed.size()
+        );
+
+        if (ZSTD_isError(decompressedSize))
+        {
+            return statusCorruption("Zstd: decompression failed");
+        }
+
+        if (decompressedSize != uncompressedLen)
+        {
+            return statusCorruption("Zstd: decompressed size mismatch");
+        }
+
+        return Status();
+    }
 }
 
 /// 创建压缩器
@@ -148,13 +224,13 @@ Compressor createCompressor(CompressionType type)
         case CompressionType.zstd:
             version (HasZstd)
             {
-                // return new ZstdCompressor();
+                return new ZstdCompressor();
             }
             else
             {
                 warning("Zstd compression not available (compile with -version=HasZstd), falling back to none.");
+                return new NoneCompressor();
             }
-            return new NoneCompressor();
     }
 }
 
@@ -503,10 +579,22 @@ unittest
     assert(snappyComp.type() == CompressionType.snappy);
     assert(cast(SnappyCompressor) snappyComp !is null);
 
-    // zstd 当前降级为 none
-    auto zstdComp = createCompressor(CompressionType.zstd);
-    assert(zstdComp !is null);
-    assert(zstdComp.type() == CompressionType.none);
+    version (HasZstd)
+    {
+        // zstd 启用时应返回 ZstdCompressor
+        auto zstdComp = createCompressor(CompressionType.zstd);
+        assert(zstdComp !is null);
+        assert(zstdComp.type() == CompressionType.zstd);
+        assert(cast(ZstdCompressor) zstdComp !is null);
+    }
+    else
+    {
+        // zstd 未启用时应降级为 NoneCompressor
+        auto zstdComp = createCompressor(CompressionType.zstd);
+        assert(zstdComp !is null);
+        assert(zstdComp.type() == CompressionType.none);
+        assert(cast(NoneCompressor) zstdComp !is null);
+    }
 }
 
 ///
@@ -533,4 +621,160 @@ unittest
     auto emptyStatus = nc.decompress(Slice(new ubyte[0]), emptyOutput);
     assert(emptyStatus.ok());
     assert(emptyOutput.length == 0);
+}
+
+version (HasZstd)
+{
+    ///
+    unittest
+    {
+        // ZstdCompressor 基本测试
+        auto zc = new ZstdCompressor();
+        assert(zc.type() == CompressionType.zstd);
+
+        // 压缩可压缩数据
+        ubyte[] data = new ubyte[1000];
+        data[] = 0xAA;
+        auto compressed = zc.compress(Slice(data));
+        assert(compressed !is null);
+        assert(compressed.length < data.length);
+
+        // 解压
+        ubyte[] decompressed;
+        auto status = zc.decompress(Slice(compressed), decompressed);
+        assert(status.ok());
+        assert(decompressed.length == data.length);
+        assert(decompressed[] == data[]);
+    }
+
+    ///
+    unittest
+    {
+        // ZstdCompressor 高压缩率数据测试
+        auto zc = new ZstdCompressor();
+
+        foreach (size; [100, 1000, 10000, 100000])
+        {
+            ubyte[] uniformData = new ubyte[size];
+            uniformData[] = 0x55;  // 全部相同
+
+            auto compressed = zc.compress(Slice(uniformData));
+            assert(compressed !is null, format("大小 %d 应可压缩", size));
+            assert(compressed.length < uniformData.length / 10,
+                format("均匀数据压缩率应很高: 原始 %d, 压缩后 %d", size, compressed.length));
+
+            ubyte[] decompressed;
+            auto status = zc.decompress(Slice(compressed), decompressed);
+            assert(status.ok());
+            assert(decompressed.length == size);
+            assert(decompressed[] == uniformData[]);
+        }
+    }
+
+    ///
+    unittest
+    {
+        // ZstdCompressor 文本数据压缩测试
+        auto zc = new ZstdCompressor();
+
+        string[] testTexts = [
+            "Hello, World! This is a test string for compression.",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "The quick brown fox jumps over the lazy dog. " ~
+            "The quick brown fox jumps over the lazy dog. " ~
+            "The quick brown fox jumps over the lazy dog.",
+            "abcdefghijklmnopqrstuvwxyz0123456789",
+        ];
+
+        foreach (text; testTexts)
+        {
+            auto compressed = zc.compress(Slice(text));
+            if (compressed !is null)
+            {
+                ubyte[] decompressed;
+                auto status = zc.decompress(Slice(compressed), decompressed);
+                assert(status.ok(), format("文本 '%s' 解压失败", text[0..20]));
+
+                string result = cast(string) decompressed;
+                assert(result == text, "解压后文本应一致");
+            }
+        }
+    }
+
+    ///
+    unittest
+    {
+        // ZstdCompressor 错误处理测试
+        auto zc = new ZstdCompressor();
+
+        // 无效数据解压
+        ubyte[] invalidData = [
+            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ];
+
+        ubyte[] output;
+        auto status = zc.decompress(Slice(invalidData), output);
+        assert(!status.ok(), "无效数据解压应失败");
+        assert(status.isCorruption(), "应返回 corruption 状态");
+    }
+
+    ///
+    unittest
+    {
+        // ZstdCompressor 截断数据测试
+        auto zc = new ZstdCompressor();
+
+        // 先压缩一些数据
+        ubyte[] original = new ubyte[100];
+        original[] = 0x77;
+        auto compressed = zc.compress(Slice(original));
+        assert(compressed !is null);
+
+        // 截断压缩数据
+        if (compressed.length > 10)
+        {
+            ubyte[] truncated = compressed[0 .. $ - 10];
+            ubyte[] output;
+            auto status = zc.decompress(Slice(truncated), output);
+            assert(!status.ok(), "截断数据解压应失败");
+            assert(status.isCorruption(), "应返回 corruption 状态");
+        }
+    }
+
+    ///
+    unittest
+    {
+        // ZstdCompressor 大数据测试
+        auto zc = new ZstdCompressor();
+
+        // 1MB 重复数据
+        size_t dataSize = 1024 * 1024;
+        ubyte[] largeData = new ubyte[dataSize];
+        foreach (i; 0 .. dataSize)
+            largeData[i] = cast(ubyte)(i % 256);
+
+        auto compressed = zc.compress(Slice(largeData));
+        if (compressed !is null)
+        {
+            assert(compressed.length < largeData.length, "压缩后应更小");
+
+            ubyte[] decompressed;
+            auto status = zc.decompress(Slice(compressed), decompressed);
+            assert(status.ok(), "解压应成功");
+            assert(decompressed.length == largeData.length, "长度应一致");
+
+            // 验证数据完整性
+            bool match = true;
+            foreach (i; 0 .. dataSize)
+            {
+                if (decompressed[i] != largeData[i])
+                {
+                    match = false;
+                    break;
+                }
+            }
+            assert(match, "数据应完全一致");
+        }
+    }
 }

@@ -15,5 +15,7 @@ dleveldb-test-*
 *.o
 *.obj
 *.lst
-dub.selections.json
+*selections.json
 .sisyphus/
+dub.selections.json
+*.dll
