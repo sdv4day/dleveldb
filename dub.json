@@ -9,6 +9,7 @@
 		"source"
 	],
 	"description": "A LevelDB-compatible key-value storage engine written in D",
+	"targetPath": "bin",
 	"dependencies": {
 		"deimos-snappy": "*",
 		"cachetools": "~>1.0.1",
@@ -17,6 +18,12 @@
 	},
 	"targetType": "library",
 	"buildTypes": {
+		"release": {
+			"buildOptions": [
+				"optimize",
+				"inline"
+			]
+		},
 		"debug": {
 			"buildOptions": [
 				"debugMode",

@@ -103,9 +103,11 @@ private:
         static uint seed;
         if (seed == 0) 
         {
-            // 初始化种子（使用D标准MonotonicTime替代core.stdc.time）
+            // 初始化种子：结合时间戳和线程ID，降低多线程碰撞概率
             import core.time : MonoTime;
-            seed = cast(uint) MonoTime.currTime.ticks;
+            import core.thread : Thread;
+            seed = cast(uint)(MonoTime.currTime.ticks ^ 
+                              cast(uint)Thread.getThis.id);
         }
         
         // xorshift算法（高质量快速随机数）
@@ -426,4 +428,273 @@ unittest
 
     // getMaxHeight
     assert(list.getMaxHeight() >= 1);
+}
+
+///
+unittest
+{
+    // 大规模插入测试
+    import dleveldb.arena;
+    import dleveldb.slice;
+    import std.conv : text;
+    
+    struct SliceComparator
+    {
+        int compare(Slice a, Slice b) const nothrow @nogc
+        {
+            return a.opCmp(b);
+        }
+    }
+    
+    auto arena = new Arena();
+    auto cmp = SliceComparator();
+    auto list = SkipList!(Slice, SliceComparator)(cast(IAllocator) arena, cmp);
+    
+    // 插入1000个键
+    foreach (i; 0 .. 1000)
+    {
+        auto key = Slice("key" ~ text(i).idup);
+        list.insert(key);
+    }
+    
+    // 验证所有键存在
+    foreach (i; 0 .. 1000)
+    {
+        auto key = Slice("key" ~ text(i).idup);
+        assert(list.contains(key), "key" ~ text(i) ~ " should exist");
+    }
+    
+    // 验证顺序遍历
+    auto iter = list.iterator();
+    iter.seekToFirst();
+    size_t count = 0;
+    while (iter.valid())
+    {
+        count++;
+        iter.next();
+    }
+    assert(count == 1000);
+    
+    // 验证反向遍历
+    iter.seekToLast();
+    count = 0;
+    while (iter.valid())
+    {
+        count++;
+        iter.prev();
+    }
+    assert(count == 1000);
+}
+
+///
+unittest
+{
+    // 边界测试：seek操作
+    import dleveldb.arena;
+    import dleveldb.slice;
+    
+    struct SliceComparator
+    {
+        int compare(Slice a, Slice b) const nothrow @nogc
+        {
+            return a.opCmp(b);
+        }
+    }
+    
+    auto arena = new Arena();
+    auto cmp = SliceComparator();
+    auto list = SkipList!(Slice, SliceComparator)(cast(IAllocator) arena, cmp);
+    
+    // 空表seek
+    auto iter = list.iterator();
+    iter.seek(Slice("any"));
+    assert(!iter.valid());
+    
+    // 插入一些键
+    list.insert(Slice("b"));
+    list.insert(Slice("d"));
+    list.insert(Slice("f"));
+    
+    // seek到存在的键
+    iter.seek(Slice("d"));
+    assert(iter.valid());
+    assert(iter.key() == Slice("d"));
+    
+    // seek到不存在的键（返回下一个）
+    iter.seek(Slice("c"));
+    assert(iter.valid());
+    assert(iter.key() == Slice("d"));
+    
+    // seek到小于所有键
+    iter.seek(Slice("a"));
+    assert(iter.valid());
+    assert(iter.key() == Slice("b"));
+    
+    // seek到大于所有键
+    iter.seek(Slice("z"));
+    assert(!iter.valid());
+}
+
+///
+unittest
+{
+    // 边界测试：迭代器边界
+    import dleveldb.arena;
+    import dleveldb.slice;
+    
+    struct SliceComparator
+    {
+        int compare(Slice a, Slice b) const nothrow @nogc
+        {
+            return a.opCmp(b);
+        }
+    }
+    
+    auto arena = new Arena();
+    auto cmp = SliceComparator();
+    auto list = SkipList!(Slice, SliceComparator)(cast(IAllocator) arena, cmp);
+    
+    // 单元素测试
+    list.insert(Slice("only"));
+    
+    auto iter = list.iterator();
+    iter.seekToFirst();
+    assert(iter.valid());
+    assert(iter.key() == Slice("only"));
+    
+    iter.seekToLast();
+    assert(iter.valid());
+    assert(iter.key() == Slice("only"));
+    
+    iter.prev();
+    assert(!iter.valid());
+    
+    iter.seekToFirst();
+    iter.next();
+    assert(!iter.valid());
+}
+
+///
+unittest
+{
+    // 压力测试：大量查找
+    import dleveldb.arena;
+    import dleveldb.slice;
+    import std.conv : text;
+    
+    struct SliceComparator
+    {
+        int compare(Slice a, Slice b) const nothrow @nogc
+        {
+            return a.opCmp(b);
+        }
+    }
+    
+    auto arena = new Arena();
+    auto cmp = SliceComparator();
+    auto list = SkipList!(Slice, SliceComparator)(cast(IAllocator) arena, cmp);
+    
+    // 预分配所有键字符串，避免临时字符串被释放
+    string[] keys;
+    foreach (i; 0 .. 1000)
+        keys ~= "key" ~ text(i).idup;
+    
+    // 插入1000个键
+    foreach (i; 0 .. 1000)
+        list.insert(Slice(keys[i]));
+    
+    // 大量查找存在的键
+    size_t foundCount = 0;
+    foreach (i; 0 .. 10_000)
+    {
+        if (list.contains(Slice(keys[i % 1000])))
+            foundCount++;
+    }
+    assert(foundCount == 10_000);
+    
+    // 大量查找不存在的键
+    size_t notFoundCount = 0;
+    foreach (i; 0 .. 1000)
+    {
+        auto key = "notexist" ~ text(i).idup;
+        if (!list.contains(Slice(key)))
+            notFoundCount++;
+    }
+    assert(notFoundCount == 1000);
+}
+
+///
+unittest
+{
+    // 边界测试：高度变化
+    import dleveldb.arena;
+    import dleveldb.slice;
+    import std.conv : text;
+    
+    struct SliceComparator
+    {
+        int compare(Slice a, Slice b) const nothrow @nogc
+        {
+            return a.opCmp(b);
+        }
+    }
+    
+    auto arena = new Arena();
+    auto cmp = SliceComparator();
+    auto list = SkipList!(Slice, SliceComparator)(cast(IAllocator) arena, cmp);
+    
+    // 初始高度为1
+    assert(list.getMaxHeight() >= 1);
+    
+    // 插入大量元素，高度可能增长
+    foreach (i; 0 .. 10000)
+    {
+        auto key = Slice("k" ~ text(i).idup);
+        list.insert(key);
+    }
+    
+    // 高度应在合理范围内
+    auto height = list.getMaxHeight();
+    assert(height >= 1);
+    assert(height <= SkipList!(Slice, SliceComparator).kMaxHeight);
+}
+
+///
+unittest
+{
+    // 整数键测试
+    import dleveldb.arena;
+    
+    struct IntComparator
+    {
+        int compare(int a, int b) const nothrow @nogc
+        {
+            return a < b ? -1 : (a > b ? 1 : 0);
+        }
+    }
+    
+    auto arena = new Arena();
+    auto cmp = IntComparator();
+    auto list = SkipList!(int, IntComparator)(cast(IAllocator) arena, cmp);
+    
+    // 插入乱序整数
+    int[] values = [5, 2, 8, 1, 9, 3, 7, 4, 6, 0];
+    foreach (v; values)
+        list.insert(v);
+    
+    // 验证顺序遍历是升序
+    auto iter = list.iterator();
+    iter.seekToFirst();
+    int prev = -1;
+    while (iter.valid())
+    {
+        assert(iter.key() > prev);
+        prev = iter.key();
+        iter.next();
+    }
+    assert(prev == 9);
+    
+    // 验证所有值存在
+    foreach (v; values)
+        assert(list.contains(v));
 }

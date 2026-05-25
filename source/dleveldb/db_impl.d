@@ -627,10 +627,16 @@ private:
     /// 执行后台压缩
     Status backgroundCompaction()
     {
+        import core.time : MonoTime;
+        auto startTime = MonoTime.currTime;
+        
         if (imm_ !is null)
         {
             // 压缩Immutable MemTable
-            return compactMemTable();
+            Status s = compactMemTable();
+            auto elapsed = MonoTime.currTime - startTime;
+            info("MemTable compaction completed in ", elapsed.total!"msecs", " ms");
+            return s;
         }
 
         // 层级压缩
@@ -648,11 +654,17 @@ private:
             c.edit().addFile(c.level() + 1, f.number, f.fileSize,
                 f.smallest, f.largest);
 
-            return versions_.logAndApply(c.edit());
+            Status s = versions_.logAndApply(c.edit());
+            auto elapsed = MonoTime.currTime - startTime;
+            info("Trivial move completed in ", elapsed.total!"msecs", " ms");
+            return s;
         }
 
         // 执行实际压缩
-        return doCompactionWork(c);
+        Status s = doCompactionWork(c);
+        auto elapsed = MonoTime.currTime - startTime;
+        info("Level ", c.level(), " compaction completed in ", elapsed.total!"msecs", " ms");
+        return s;
     }
 
     /// 压缩Immutable MemTable

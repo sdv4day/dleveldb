@@ -177,6 +177,26 @@ struct Slice
     /// 比较两个Slice（使用 std.algorithm.cmp）
     int opCmp(Slice rhs) const nothrow @nogc
     {
+        // 快速路径：短键直接整数比较（避免循环开销）
+        size_t minLen = size_ < rhs.size_ ? size_ : rhs.size_;
+        
+        if (minLen <= 8)
+        {
+            // 对于 ≤8 字节的键，使用大端序整数比较（保持字典序）
+            ulong a = 0, b = 0;
+            // 大端序加载字节到整数（高位在前，保持字典序）
+            for (size_t i = 0; i < minLen; i++)
+            {
+                a = (a << 8) | data_[i];
+                b = (b << 8) | rhs.data_[i];
+            }
+            if (a < b) return -1;
+            if (a > b) return 1;
+            // 前缀相同，比较长度
+            return size_ < rhs.size_ ? -1 : (size_ > rhs.size_ ? 1 : 0);
+        }
+        
+        // 长键使用标准库比较
         import std.algorithm.comparison : cmp;
         return cmp(data_[0 .. size_], rhs.data_[0 .. rhs.size_]);
     }
@@ -524,4 +544,121 @@ unittest
     ubyte[] bf = [0xAA, 0xBB];
     auto sb2 = sliceFromBytes(bf);
     assert(sb2.asBytes() == bf);
+}
+
+///
+unittest
+{
+    // 边界测试：空Slice操作
+    auto empty = Slice();
+    assert(empty.size() == 0);
+    assert(empty.data() is null);
+    assert(empty.asBytes().length == 0);
+    assert(empty.asString().length == 0);
+    
+    // 边界测试：单字节Slice
+    auto single = Slice("a");
+    assert(single.size() == 1);
+    assert(single.asBytes()[0] == 'a');
+    
+    // 边界测试：最大长度比较
+    auto long1 = Slice("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    auto long2 = Slice("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab");
+    assert(long1 < long2);
+    assert(long2 > long1);
+    
+    // 边界测试：相同前缀不同长度
+    auto pre1 = Slice("prefix");
+    auto pre2 = Slice("prefix_extended");
+    assert(pre1 < pre2);
+    assert(pre2.startsWith(pre1));
+    
+    // 边界测试：二进制数据
+    ubyte[256] binaryData;
+    foreach (i; 0 .. 256)
+        binaryData[i] = cast(ubyte) i;
+    auto binSlice = Slice(binaryData[]);
+    assert(binSlice.size() == 256);
+    assert(binSlice.asBytes()[0] == 0);
+    assert(binSlice.asBytes()[255] == 255);
+    
+    // 边界测试：UTF-8多字节字符
+    auto utf8 = Slice("你好世界");
+    assert(utf8.size() == 12); // 4个中文，每个3字节
+    
+    // 边界测试：removePrefix边界
+    auto rp = Slice("test");
+    assert(rp.removePrefix(0).size() == 4);
+    assert(rp.removePrefix(4).size() == 0);
+}
+
+///
+unittest
+{
+    // 压力测试：大量比较操作
+    auto s1 = Slice("benchmark_key_12345");
+    auto s2 = Slice("benchmark_key_12346");
+    size_t cmpCount = 0;
+    foreach (_; 0 .. 10_000)
+    {
+        if (s1 < s2) cmpCount++;
+    }
+    assert(cmpCount == 10_000);
+    
+    // 压力测试：大量哈希计算
+    auto hashTarget = Slice("hash_benchmark_key");
+    size_t hashSum = 0;
+    foreach (_; 0 .. 10_000)
+        hashSum += hashTarget.toHash();
+    assert(hashSum > 0);
+    
+    // 压力测试：大量OwnedSlice创建
+    int sum = 0;
+    foreach (i; 0 .. 1000)
+    {
+        auto owned = Slice.owned(i);
+        sum += owned.slice().as!int;
+    }
+    assert(sum == 499500); // 0+1+2+...+999
+    
+    // 压力测试：大量startsWith检查
+    auto longStr = Slice("prefix_suffix_data_more_text");
+    auto prefix = Slice("prefix_");
+    size_t matchCount = 0;
+    foreach (_; 0 .. 10_000)
+    {
+        if (longStr.startsWith(prefix)) matchCount++;
+    }
+    assert(matchCount == 10_000);
+}
+
+///
+unittest
+{
+    // POD结构体测试
+    struct Point { int x, y; }
+    auto pt = Point(10, 20);
+    auto ptSlice = Slice.owned(pt);
+    assert(ptSlice.size() == Point.sizeof);
+    auto recovered = ptSlice.slice().as!Point;
+    assert(recovered.x == 10);
+    assert(recovered.y == 20);
+    
+    // 数组类型转换测试
+    int[] intArr = [1, 2, 3, 4, 5];
+    auto arrSlice = Slice(cast(const(ubyte)[]) intArr);
+    auto recoveredArr = arrSlice.as!(int[]);
+    assert(recoveredArr.length == 5);
+    assert(recoveredArr[0] == 1);
+    assert(recoveredArr[4] == 5);
+    
+    // opCast测试
+    auto strSlice = Slice("test");
+    string str = strSlice.as!string;
+    assert(str == "test");
+    
+    // 别名测试
+    auto aliasSlice = Slice("alias");
+    assert(aliasSlice.length == aliasSlice.size());
+    assert(aliasSlice.isEmpty == aliasSlice.empty());
 }

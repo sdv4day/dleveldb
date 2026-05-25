@@ -73,8 +73,14 @@ public:
         impl_ = new DBImpl(opt, dbpath);
         Status s = impl_.open();
         if (!s.ok())
+        {
+            import std.logger;
+            warning("Failed to open database at ", dbpath, ": ", s.toString());
             throw new LeveldbException(s);
+        }
         isOpen_ = true;
+        import std.logger;
+        info("Database opened successfully at ", dbpath);
     }
 
     /// 判断数据库是否打开
@@ -496,8 +502,14 @@ public:
             {
                 static if (isSomeString!V)
                 {
-                    string combined = (existing.asString() ~ val).idup;
-                    db_.put(key, combined);
+                    // 优化：使用数组拼接而非字符串 ~ 运算符，避免中间临时对象
+                    auto existingBytes = existing.asBytes();
+                    auto valSlice = Slice(val);
+                    ubyte[] combined;
+                    combined.length = existingBytes.length + valSlice.size();
+                    combined[0 .. existingBytes.length] = existingBytes;
+                    combined[existingBytes.length .. $] = valSlice.asBytes();
+                    db_.put(key, Slice(combined.ptr, combined.length));
                 }
                 else
                 {
@@ -685,9 +697,12 @@ public:
             if (updater !is null)
             {
                 auto existingBytes = existing.asBytes();
-                Slice mutableVal = Slice(existingBytes.dup);
-                updater(mutableVal);
-                db_.put(key, mutableVal);
+                // 优化：直接创建新数组而非 .dup，明确生命周期
+                ubyte[] mutableVal;
+                mutableVal.length = existingBytes.length;
+                mutableVal[] = existingBytes[];
+                updater(Slice(mutableVal.ptr, mutableVal.length));
+                db_.put(key, Slice(mutableVal.ptr, mutableVal.length));
             }
         }
     }
@@ -713,9 +728,12 @@ public:
             if (updater !is null)
             {
                 auto existingBytes = existing.asBytes();
-                Slice mutableVal = Slice(existingBytes.dup);
-                updater(mutableVal);
-                db_.put(key, mutableVal);
+                // 优化：直接创建新数组而非 .dup，明确生命周期
+                ubyte[] mutableVal;
+                mutableVal.length = existingBytes.length;
+                mutableVal[] = existingBytes[];
+                updater(Slice(mutableVal.ptr, mutableVal.length));
+                db_.put(key, Slice(mutableVal.ptr, mutableVal.length));
             }
             return db_.getSlice(key);
         }
@@ -814,4 +832,384 @@ unittest
         // 显式关闭数据库
         db.close();
     }
+}
+
+///
+unittest
+{
+    // 并发写入测试 - 验证多线程同时写入的正确性
+    import std.file : tempDir, exists, rmdirRecurse;
+    import std.path : buildPath;
+    import std.format : format;
+    
+    version (Posix) {} else version (Windows)
+    {
+        // Windows 下跳过并发测试（core.thread 在 Windows unittest 中可能不稳定）
+        return;
+    }
+    
+    string dbPath = buildPath(tempDir().idup, "dleveldb_concurrent_test");
+    if (dbPath.exists) dbPath.rmdirRecurse();
+    
+    {
+        auto db = new LevelDB(dbPath);
+        
+        // 启动 5 个线程，每个线程写入 100 个键值对
+        import core.thread : Thread;
+        Thread[] threads;
+        
+        foreach (i; 0 .. 5)
+        {
+            threads ~= new Thread({
+                int threadId = i;
+                for (int j = 0; j < 100; j++)
+                {
+                    string key = format("key_%d_%d", threadId, j);
+                    string value = format("value_%d_%d", threadId, j);
+                    db.put(Slice(key), Slice(value));
+                }
+            });
+            threads[$-1].start();
+        }
+        
+        // 等待所有线程完成
+        foreach (t; threads)
+        {
+            t.join();
+        }
+        
+        // 验证数据完整性：应该正好有 500 个键值对
+        assert(db.aa.length == 500, 
+            format("Expected 500 keys, got %d", db.aa.length));
+        
+        // 随机抽样验证部分键值对
+        for (int i = 0; i < 5; i++)
+        {
+            for (int j = 0; j < 10; j++)  // 只检查前 10 个
+            {
+                string key = format("key_%d_%d", i, j);
+                string expectedValue = format("value_%d_%d", i, j);
+                
+                assert(key in db.aa, format("Key %s should exist", key));
+                auto actualValue = db.aa[key].asString();
+                assert(actualValue == expectedValue,
+                    format("Value mismatch for key %s: expected %s, got %s",
+                           key, expectedValue, actualValue));
+            }
+        }
+        
+        // 显式关闭数据库
+        db.close();
+    }
+    
+    // 清理测试数据库
+    if (dbPath.exists) dbPath.rmdirRecurse();
+}
+
+///
+unittest
+{
+    // 边界测试：空键和空值
+    import std.file : tempDir, exists, rmdirRecurse;
+    import std.path : buildPath;
+    import std.range : repeat;
+    import std.array : array;
+    
+    string dbPath = buildPath(tempDir().idup, "dleveldb_boundary_test");
+    if (dbPath.exists) dbPath.rmdirRecurse();
+    
+    {
+        auto db = new LevelDB(dbPath);
+        
+        // 空值测试
+        db.put(Slice("empty_value"), Slice(""));
+        string val;
+        assert(db.get(Slice("empty_value"), val));
+        assert(val.length == 0);
+        
+        // 长键测试（适度长度）
+        string longKey = "long_key_" ~ text(0);
+        foreach (_; 0 .. 100) longKey ~= "_part";
+        string longValue = "long_value_data";
+        db.put(Slice(longKey), Slice(longValue));
+        assert(db.get(Slice(longKey), val));
+        assert(val == longValue);
+        
+        // 二进制键测试
+        ubyte[16] binaryKey;
+        foreach (i; 0 .. 16)
+            binaryKey[i] = cast(ubyte) i;
+        db.put(Slice(binaryKey[]), Slice("binary_value"));
+        assert(db.get(Slice(binaryKey[]), val));
+        assert(val == "binary_value");
+        
+        db.close();
+    }
+    
+    if (dbPath.exists) dbPath.rmdirRecurse();
+}
+
+///
+unittest
+{
+    // WriteBatch测试
+    import std.file : tempDir, exists, rmdirRecurse;
+    import std.path : buildPath;
+    
+    string dbPath = buildPath(tempDir().idup, "dleveldb_batch_test");
+    if (dbPath.exists) dbPath.rmdirRecurse();
+    
+    {
+        auto db = new LevelDB(dbPath);
+        
+        // 批量写入
+        auto batch = new WriteBatch();
+        foreach (i; 0 .. 100)
+        {
+            string key = "batch_key_" ~ text(i);
+            string val = "batch_val_" ~ text(i);
+            batch.put(Slice(key), Slice(val));
+        }
+        db.write(batch);
+        
+        // 验证批量写入
+        foreach (i; 0 .. 100)
+        {
+            string key = "batch_key_" ~ text(i);
+            string expectedVal = "batch_val_" ~ text(i);
+            string val;
+            assert(db.get(Slice(key), val));
+            assert(val == expectedVal);
+        }
+        
+        // 批量删除
+        auto delBatch = new WriteBatch();
+        foreach (i; 0 .. 50)
+        {
+            string key = "batch_key_" ~ text(i);
+            delBatch.remove(Slice(key));
+        }
+        db.write(delBatch);
+        
+        // 验证删除
+        foreach (i; 0 .. 50)
+        {
+            string key = "batch_key_" ~ text(i);
+            assert(!db.getSlice(Slice(key)).ok());
+        }
+        foreach (i; 50 .. 100)
+        {
+            string key = "batch_key_" ~ text(i);
+            assert(db.getSlice(Slice(key)).ok());
+        }
+        
+        db.close();
+    }
+    
+    if (dbPath.exists) dbPath.rmdirRecurse();
+}
+
+///
+unittest
+{
+    // 迭代器测试
+    import std.file : tempDir, exists, rmdirRecurse;
+    import std.path : buildPath;
+    
+    string dbPath = buildPath(tempDir().idup, "dleveldb_iter_test");
+    if (dbPath.exists) dbPath.rmdirRecurse();
+    
+    {
+        auto db = new LevelDB(dbPath);
+        
+        // 插入有序数据
+        foreach (i; 0 .. 100)
+        {
+            string key = text(i).zfill(3);
+            db.put(Slice(key), Slice("val_" ~ key));
+        }
+        
+        // 正向遍历
+        auto iter = db.iterator();
+        iter.seekToFirst();
+        int count = 0;
+        const(char)[] prevKey = "";
+        while (iter.valid())
+        {
+            auto key = iter.key().asString();
+            assert(key >= prevKey, "Keys should be in ascending order");
+            prevKey = key.idup;
+            count++;
+            iter.next();
+        }
+        assert(count == 100);
+        
+        // 反向遍历
+        iter.seekToLast();
+        count = 0;
+        prevKey = "zzz";
+        while (iter.valid())
+        {
+            auto key = iter.key().asString();
+            assert(key <= prevKey, "Keys should be in descending order");
+            prevKey = key.idup;
+            count++;
+            iter.prev();
+        }
+        assert(count == 100);
+        
+        // Seek测试
+        iter.seek(Slice("050"));
+        assert(iter.valid());
+        assert(iter.key().asString() == "050");
+        
+        iter.seek(Slice("025"));
+        assert(iter.valid());
+        assert(iter.key().asString() == "025");
+        
+        // Seek不存在的键
+        iter.seek(Slice("025a"));
+        assert(iter.valid());
+        assert(iter.key().asString() == "026");
+        
+        db.close();
+    }
+    
+    if (dbPath.exists) dbPath.rmdirRecurse();
+}
+
+///
+unittest
+{
+    // 压力测试：大量写入和读取
+    import std.file : tempDir, exists, rmdirRecurse;
+    import std.path : buildPath;
+    
+    string dbPath = buildPath(tempDir().idup, "dleveldb_stress_test");
+    if (dbPath.exists) dbPath.rmdirRecurse();
+    
+    {
+        auto db = new LevelDB(dbPath);
+        
+        // 写入10000个键值对
+        foreach (i; 0 .. 10_000)
+        {
+            string key = "stress_key_" ~ text(i);
+            string val = "stress_val_" ~ text(i);
+            db.put(Slice(key), Slice(val));
+        }
+        
+        // 验证所有键值对
+        size_t foundCount = 0;
+        foreach (i; 0 .. 10_000)
+        {
+            string key = "stress_key_" ~ text(i);
+            string expectedVal = "stress_val_" ~ text(i);
+            string val;
+            if (db.get(Slice(key), val) && val == expectedVal)
+                foundCount++;
+        }
+        assert(foundCount == 10_000);
+        
+        // 更新测试
+        foreach (i; 0 .. 1000)
+        {
+            string key = "stress_key_" ~ text(i);
+            string newVal = "updated_val_" ~ text(i);
+            db.put(Slice(key), Slice(newVal));
+        }
+        
+        // 验证更新
+        foreach (i; 0 .. 1000)
+        {
+            string key = "stress_key_" ~ text(i);
+            string expectedVal = "updated_val_" ~ text(i);
+            string val;
+            assert(db.get(Slice(key), val));
+            assert(val == expectedVal);
+        }
+        
+        // 删除测试
+        foreach (i; 0 .. 500)
+        {
+            string key = "stress_key_" ~ text(i);
+            db.del(Slice(key));
+        }
+        
+        // 验证删除
+        foreach (i; 0 .. 500)
+        {
+            string key = "stress_key_" ~ text(i);
+            assert(!db.getSlice(Slice(key)).ok());
+        }
+        foreach (i; 500 .. 10_000)
+        {
+            string key = "stress_key_" ~ text(i);
+            assert(db.getSlice(Slice(key)).ok());
+        }
+        
+        db.close();
+    }
+    
+    if (dbPath.exists) dbPath.rmdirRecurse();
+}
+
+///
+unittest
+{
+    // 泛型接口测试
+    import std.file : tempDir, exists, rmdirRecurse;
+    import std.path : buildPath;
+    
+    string dbPath = buildPath(tempDir().idup, "dleveldb_generic_test");
+    if (dbPath.exists) dbPath.rmdirRecurse();
+    
+    {
+        auto db = new LevelDB(dbPath);
+        
+        // 整数类型
+        db.put("int_key", 42);
+        int intVal;
+        assert(db.get("int_key", intVal));
+        assert(intVal == 42);
+        
+        // 长整数类型
+        db.put("long_key", 123456789012345L);
+        long longVal;
+        assert(db.get("long_key", longVal));
+        assert(longVal == 123456789012345L);
+        
+        // 浮点类型
+        db.put("double_key", 3.14159);
+        double doubleVal;
+        assert(db.get("double_key", doubleVal));
+        assert(doubleVal == 3.14159);
+        
+        // 数组类型
+        int[] intArr = [1, 2, 3, 4, 5];
+        db.put("array_key", intArr);
+        int[] recoveredArr;
+        assert(db.get("array_key", recoveredArr));
+        assert(recoveredArr == intArr);
+        
+        db.close();
+    }
+    
+    if (dbPath.exists) dbPath.rmdirRecurse();
+}
+
+string text(T)(T val)
+{
+    import std.conv : to;
+    return to!string(val);
+}
+
+string zfill(string s, int width)
+{
+    import std.format : format;
+    import std.algorithm : max;
+    import std.range : repeat;
+    import std.array : array;
+    int padding = max(0, width - cast(int)s.length);
+    return "%s%s".format(repeat('0', padding).array, s);
 }

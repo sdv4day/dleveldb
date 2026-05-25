@@ -125,16 +125,26 @@ public:
         size_t keySize = key.size();
         size_t valSize = value.size();
         size_t internalKeySize = keySize + ulong.sizeof;
-        int varintKeyLen = varintLength(cast(uint) internalKeySize);
-        int varintValLen = varintLength(cast(uint) valSize);
+        
+        // 快速路径：大多数 internalKeySize 和 valSize 都很小（< 128），直接判断为单字节
+        int varintKeyLen = (internalKeySize < 128) ? 1 : varintLength(cast(uint) internalKeySize);
+        int varintValLen = (valSize < 128) ? 1 : varintLength(cast(uint) valSize);
         size_t encodedLen = varintKeyLen + internalKeySize + varintValLen + valSize;
 
         // 通过IAllocator分配内存
         char* buf = cast(char*) allocator_.allocate(encodedLen).ptr;
         char* p = buf;
 
-        // 编码varint32(internal_key_size)
-        p += encodeVarint32(cast(ubyte*) p, cast(uint) internalKeySize);
+        // 编码varint32(internal_key_size) - 快速路径
+        if (internalKeySize < 128)
+        {
+            *cast(ubyte*)p = cast(ubyte)internalKeySize;
+            p += 1;
+        }
+        else
+        {
+            p += encodeVarint32(cast(ubyte*) p, cast(uint) internalKeySize);
+        }
 
         // 拷贝user_key（使用D标准数组切片拷贝）
         (cast(ubyte*) p)[0 .. keySize] = key.asBytes();
@@ -144,8 +154,16 @@ public:
         encodeFixed64(cast(ubyte*) p, packSequenceAndType(seq, type));
         p += ulong.sizeof;
 
-        // 编码varint32(val_size)
-        p += encodeVarint32(cast(ubyte*) p, cast(uint) valSize);
+        // 编码varint32(val_size) - 快速路径
+        if (valSize < 128)
+        {
+            *cast(ubyte*)p = cast(ubyte)valSize;
+            p += 1;
+        }
+        else
+        {
+            p += encodeVarint32(cast(ubyte*) p, cast(uint) valSize);
+        }
 
         // 拷贝value（使用D标准数组切片拷贝）
         if (valSize > 0)

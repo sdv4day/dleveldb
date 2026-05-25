@@ -285,17 +285,30 @@ ulong extractPackedTag(Slice internalKey) nothrow @trusted @nogc
     return decodeFixed64(internalKey.data() + internalKey.size() - ulong.sizeof);
 }
 
-/// 配置常量
+/// 配置常量（使用 CTFE 函数包装，便于未来扩展）
+
+/// 计算 LSM 树的层数
+int computeNumLevels() pure @safe @nogc
+{
+    // 当前固定为 7 层，保留 CTFE 能力以便未来动态计算
+    return 7;
+}
+
 /// LSM树的层数
-enum int kNumLevels = 7;
+enum int kNumLevels = computeNumLevels();
+
 /// L0层触发压缩的文件数阈值
 enum int kL0_CompactionTrigger = 4;
+
 /// L0层写入减速的文件数阈值
 enum int kL0_SlowdownWritesTrigger = 8;
+
 /// L0层停止写入的文件数阈值
 enum int kL0_StopWritesTrigger = 12;
+
 /// 内存压缩的最大层级
 enum int kMaxMemCompactLevel = 2;
+
 /// 读取字节数统计周期（1MB）
 enum size_t kReadBytesPeriod = 1048576; // 1MB
 

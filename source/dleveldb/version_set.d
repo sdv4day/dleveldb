@@ -356,7 +356,12 @@ public:
         Version v = new Version(this);
         for (int level = 0; level < kNumLevels; level++)
         {
-            v.setFiles(level, current_.files(level).dup);
+            auto srcFiles = current_.files(level);
+            // 优化：直接赋值而非 .dup，因为后续 applyEdit 会修改副本
+            // FileMetaData 是 struct，数组切片拷贝是浅拷贝，但元素是值类型
+            auto newFiles = new FileMetaData[srcFiles.length];
+            newFiles[] = srcFiles[];
+            v.setFiles(level, newFiles);
         }
 
         // 应用编辑

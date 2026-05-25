@@ -19,6 +19,7 @@ private:
     size_t allocPtr_;       // 当前块中已分配的偏移
     size_t allocBytesRemain_; // 当前块剩余字节数
     size_t memoryUsage_;    // 总内存使用量
+    size_t blocksMemory_;   // 所有块的总内存（不含指针数组开销）
 
     enum kBlockSize = 4096; // 默认块大小4KB
 
@@ -29,6 +30,7 @@ public:
     {
         backend_ = backend;
         memoryUsage_ = 0;
+        blocksMemory_ = 0;
         allocPtr_ = 0;
         allocBytesRemain_ = 0;
     }
@@ -186,6 +188,7 @@ public:
         blocks_ = null;
         allocPtr_ = 0;
         allocBytesRemain_ = 0;
+        blocksMemory_ = 0;
         memoryUsage_ = 0;
         return true;
     }
@@ -260,7 +263,8 @@ private:
 
             auto block = cast(ubyte[]) mem;
             blocks_ ~= block;
-            memoryUsage_ += alignedBytes + blocks_.length * (void*).sizeof;
+            blocksMemory_ += alignedBytes;
+            memoryUsage_ = blocksMemory_ + blocks_.length * (void*).sizeof;
             return mem.ptr[0 .. originalBytes];
         }
 
@@ -283,7 +287,8 @@ private:
 
         auto block = cast(ubyte[]) newBlock;
         blocks_ ~= block;
-        memoryUsage_ += kBlockSize + blocks_.length * (void*).sizeof;
+        blocksMemory_ += kBlockSize;
+        memoryUsage_ = blocksMemory_ + blocks_.length * (void*).sizeof;
 
         void* result = newBlock.ptr;
         allocPtr_ = alignedBytes;
@@ -349,4 +354,216 @@ unittest
     auto arena2 = new Arena();
     auto aptr = arena2.allocateAlignedPtr(32);
     assert(aptr !is null);
+}
+
+///
+unittest
+{
+    // 内存压力测试：大量小对象分配
+    auto arena = new Arena();
+    size_t allocCount = 10_000;
+    void[][] ptrs;
+    ptrs.length = allocCount;
+    
+    foreach (i; 0 .. allocCount)
+    {
+        ptrs[i] = arena.allocate(64);
+        assert(ptrs[i].ptr !is null);
+        assert(ptrs[i].length == 64);
+    }
+    
+    // 验证所有指针有效
+    foreach (i; 0 .. allocCount)
+    {
+        assert(arena.owns(ptrs[i]) == Ternary.yes);
+    }
+    
+    // 内存使用量应合理
+    auto usage = arena.memoryUsage();
+    assert(usage >= allocCount * 64);
+    
+    arena.deallocateAll();
+    assert(arena.memoryUsage() == 0);
+}
+
+///
+unittest
+{
+    // 边界测试：大块分配
+    auto arena = new Arena();
+    
+    // 分配超过kBlockSize/4的大块
+    auto big1 = arena.allocate(2000);
+    assert(big1.ptr !is null);
+    assert(big1.length == 2000);
+    
+    auto big2 = arena.allocate(5000);
+    assert(big2.ptr !is null);
+    assert(big2.length == 5000);
+    
+    auto big3 = arena.allocate(10000);
+    assert(big3.ptr !is null);
+    assert(big3.length == 10000);
+    
+    // 验证owns
+    assert(arena.owns(big1) == Ternary.yes);
+    assert(arena.owns(big2) == Ternary.yes);
+    assert(arena.owns(big3) == Ternary.yes);
+}
+
+///
+unittest
+{
+    // 边界测试：对齐分配
+    auto arena = new Arena();
+    
+    // 不同对齐要求
+    auto mem8 = arena.alignedAllocate(100, 8);
+    assert(mem8.ptr !is null);
+    assert((cast(size_t) mem8.ptr % 8) == 0);
+    
+    auto mem16 = arena.alignedAllocate(100, 16);
+    assert(mem16.ptr !is null);
+    assert((cast(size_t) mem16.ptr % 16) == 0);
+    
+    auto mem32 = arena.alignedAllocate(100, 32);
+    assert(mem32.ptr !is null);
+    assert((cast(size_t) mem32.ptr % 32) == 0);
+    
+    auto mem64 = arena.alignedAllocate(100, 64);
+    assert(mem64.ptr !is null);
+    assert((cast(size_t) mem64.ptr % 64) == 0);
+}
+
+///
+unittest
+{
+    // 边界测试：goodAllocSize
+    auto arena = new Arena();
+    
+    // 小对象对齐
+    auto s1 = arena.goodAllocSize(1);
+    assert(s1 >= 1);
+    
+    // 中等对象对齐
+    auto s2 = arena.goodAllocSize(100);
+    assert(s2 >= 100);
+    
+    // 大对象对齐
+    auto s3 = arena.goodAllocSize(1000);
+    assert(s3 >= 1000);
+}
+
+///
+unittest
+{
+    // 边界测试：resolveInternalPointer
+    auto arena = new Arena();
+    
+    auto mem = arena.allocate(1000);
+    assert(mem.ptr !is null);
+    
+    // 内部指针解析
+    void[] result;
+    auto t = arena.resolveInternalPointer(mem.ptr, result);
+    assert(t == Ternary.yes);
+    assert(result.ptr !is null);
+    
+    // 指向中间的指针
+    auto midPtr = mem.ptr + 500;
+    t = arena.resolveInternalPointer(midPtr, result);
+    assert(t == Ternary.yes);
+    
+    // 外部指针
+    ubyte[100] externalBuf;
+    t = arena.resolveInternalPointer(externalBuf.ptr, result);
+    assert(t != Ternary.yes);
+}
+
+///
+unittest
+{
+    // 边界测试：不支持的操作
+    auto arena = new Arena();
+    
+    // expand不支持
+    auto mem = arena.allocate(100);
+    assert(!arena.expand(mem, 200));
+    
+    // reallocate不支持
+    assert(!arena.reallocate(mem, 200));
+    
+    // alignedReallocate不支持
+    assert(!arena.alignedReallocate(mem, 200, 8));
+    
+    // deallocate不支持（单块释放）
+    assert(!arena.deallocate(mem));
+    
+    // allocateAll不支持
+    auto all = arena.allocateAll();
+    assert(all is null);
+}
+
+///
+unittest
+{
+    // 混合大小分配测试
+    auto arena = new Arena();
+    
+    // 交替分配大小对象
+    void[][] smallPtrs;
+    void[][] largePtrs;
+    
+    foreach (i; 0 .. 100)
+    {
+        auto small = arena.allocate(32);
+        smallPtrs ~= small;
+        assert(small.ptr !is null);
+        
+        if (i % 10 == 0)
+        {
+            auto large = arena.allocate(5000);
+            largePtrs ~= large;
+            assert(large.ptr !is null);
+        }
+    }
+    
+    // 验证所有分配有效
+    foreach (p; smallPtrs)
+        assert(arena.owns(p) == Ternary.yes);
+    foreach (p; largePtrs)
+        assert(arena.owns(p) == Ternary.yes);
+    
+    // 清理
+    arena.deallocateAll();
+    assert(arena.empty() == Ternary.yes);
+}
+
+///
+unittest
+{
+    // 内存使用统计测试
+    auto arena = new Arena();
+    
+    auto initialUsage = arena.memoryUsage();
+    assert(initialUsage == 0);
+    
+    // 分配后内存增长
+    arena.allocate(100);
+    auto usage1 = arena.memoryUsage();
+    assert(usage1 > 0);
+    
+    // 继续分配
+    arena.allocate(1000);
+    auto usage2 = arena.memoryUsage();
+    assert(usage2 >= usage1);
+    
+    // 大块分配
+    arena.allocate(10000);
+    auto usage3 = arena.memoryUsage();
+    assert(usage3 >= usage2);
+    
+    // 清理后归零
+    arena.deallocateAll();
+    assert(arena.memoryUsage() == 0);
 }
