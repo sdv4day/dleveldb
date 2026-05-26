@@ -21,59 +21,59 @@ struct SkipList(Key, Cmp)
 {
 public:
     /// 跳表最大高度
-    enum kMaxHeight = 12;
-    /// 分支因子（每层晋升概率为 1/kBranching）
-    enum kBranching = 4;
+    enum maxHeight = 12;
+    /// 分支因子（每层晋升概率为 1/branching）
+    enum branching = 4;
 
 private:
-    IAllocator allocator_;
-    Cmp cmp_;
-    Node* head_;
-    int maxHeight_; // 原子访问
+    IAllocator m_allocator;
+    Cmp m_cmp;
+    Node* m_head;
+    int m_currentMaxHeight; // 原子访问
 
     struct Node
     {
         Key key;
         int height;
-        // next_[0] ... next_[height-1]
+        // m_next[0] ... m_next[height-1]
         // 紧跟在结构体后面
 
         Node* next(int n)  @nogc
         {
-            return (&next_[0])[n];
+            return (&m_next[0])[n];
         }
 
         void setNext(int n, Node* x)  @nogc
         {
-            (&next_[0])[n] = x;
+            (&m_next[0])[n] = x;
         }
 
         // 原子读取next指针（无锁读）
         Node* nextAcquire(int n)
         {
-            return atomicLoad!(MemoryOrder.acq)((&next_[0])[n]);
+            return atomicLoad!(MemoryOrder.acq)((&m_next[0])[n]);
         }
 
         // 原子写入next指针（写端）
         void setNextRelease(int n, Node* x)
         {
-            atomicStore!(MemoryOrder.rel)((&next_[0])[n], x);
+            atomicStore!(MemoryOrder.rel)((&m_next[0])[n], x);
         }
 
         // next数组占位（实际大小由height决定）
-        Node*[1] next_;
+        Node*[1] m_next;
     }
 
     /// 分配新节点（增强安全性检查）
-    Node* newNode(Key key, int height) 
+    @trusted Node* newNode(Key key, int height) 
     {
         // 参数验证（编程错误，使用断言）
-        assert(height >= 1 && height <= kMaxHeight, 
+        assert(height >= 1 && height <= maxHeight, 
             "SkipList: invalid height");
         
         // 计算节点大小：Node基础 + (height-1)个next指针
         size_t nodeSize = Node.sizeof + (height - 1) * (Node*).sizeof;
-        void[] mem = allocator_.allocate(nodeSize);
+        void[] mem = m_allocator.allocate(nodeSize);
 
         // 内存分配检查
         if (mem is null || mem.ptr is null)
@@ -116,7 +116,7 @@ private:
         seed ^= seed << 5;
 
         int height = 1;
-        while (height < kMaxHeight && (seed & 0x3) == 0)
+        while (height < maxHeight && (seed & 0x3) == 0)
         {
             height++;
             seed ^= seed << 13;
@@ -129,7 +129,7 @@ private:
     /// 获取当前最大高度（原子读取）
     int getMaxHeight()
     {
-        return atomicLoad!(MemoryOrder.acq)(maxHeight_);
+        return atomicLoad!(MemoryOrder.acq)(m_currentMaxHeight);
     }
 
     /// 查找key在每层的前驱节点
@@ -137,13 +137,13 @@ private:
     /// 返回：第0层中第一个>=key的节点
     Node* findGreaterOrEqual(Key key, Node** prev)  @nogc
     {
-        Node* x = head_;
+        Node* x = m_head;
         int level = getMaxHeight() - 1;
 
         while (true)
         {
             Node* next = x.nextAcquire(level);
-            if (next !is null && cmp_.compare(next.key, key) < 0)
+            if (next !is null && m_cmp.compare(next.key, key) < 0)
             {
                 // 在当前层继续向右
                 x = next;
@@ -168,13 +168,13 @@ private:
     /// 查找最后一个小于key的节点
     Node* findLessThan(Key key)  @nogc
     {
-        Node* x = head_;
+        Node* x = m_head;
         int level = getMaxHeight() - 1;
 
         while (true)
         {
             Node* next = x.nextAcquire(level);
-            if (next is null || cmp_.compare(next.key, key) >= 0)
+            if (next is null || m_cmp.compare(next.key, key) >= 0)
             {
                 if (level == 0)
                 {
@@ -195,7 +195,7 @@ private:
     /// 查找最后一个节点
     Node* findLast()  @nogc
     {
-        Node* x = head_;
+        Node* x = m_head;
         int level = getMaxHeight() - 1;
 
         while (true)
@@ -223,25 +223,25 @@ public:
     /// 构造函数（D惯用：构造即初始化）
     this(IAllocator allocator, Cmp cmp) 
     {
-        allocator_ = allocator;
-        cmp_ = cmp;
-        maxHeight_ = 1;
+        m_allocator = allocator;
+        m_cmp = cmp;
+        m_currentMaxHeight = 1;
 
-        head_ = newNode(Key.init, kMaxHeight);
-        for (int i = 0; i < kMaxHeight; i++)
+        m_head = newNode(Key.init, maxHeight);
+        for (int i = 0; i < maxHeight; i++)
         {
-            head_.setNext(i, null);
+            m_head.setNext(i, null);
         }
     }
 
     /// 插入键（需外部同步）
     void insert(Key key) 
     {
-        Node*[kMaxHeight] prev;
+        Node*[maxHeight] prev;
         Node* found = findGreaterOrEqual(key, prev.ptr);
 
         // 不允许重复键
-        assert(found is null || cmp_.compare(found.key, key) != 0);
+        assert(found is null || m_cmp.compare(found.key, key) != 0);
 
         int height = randomHeight();
         if (height > getMaxHeight())
@@ -249,9 +249,9 @@ public:
             // 新节点高度超过当前最大高度
             for (int i = getMaxHeight(); i < height; i++)
             {
-                prev[i] = head_;
+                prev[i] = m_head;
             }
-            atomicStore!(MemoryOrder.rel)(maxHeight_, height);
+            atomicStore!(MemoryOrder.rel)(m_currentMaxHeight, height);
         }
 
         Node* x = newNode(key, height);
@@ -266,7 +266,7 @@ public:
     bool contains(Key key)  @nogc
     {
         Node* x = findGreaterOrEqual(key, null);
-        if (x !is null && cmp_.compare(x.key, key) == 0)
+        if (x !is null && m_cmp.compare(x.key, key) == 0)
         {
             return true;
         }
@@ -282,7 +282,7 @@ public:
     /// 是否为空
     bool empty()  @nogc
     {
-        return head_.nextAcquire(0) is null;
+        return m_head.nextAcquire(0) is null;
     }
 
     /// 估算内存使用量（需外部提供，IAllocator无通用memoryUsage接口）
@@ -301,23 +301,23 @@ public:
 struct SkipListIterator(Key, Cmp)
 {
 private:
-    SkipList!(Key, Cmp)* list_;
-    SkipList!(Key, Cmp).Node* node_;
+    SkipList!(Key, Cmp)* m_list;
+    SkipList!(Key, Cmp).Node* m_node;
 
 public:
     /// 构造函数
     /// Params: list = 指向所属跳表的指针
     this(SkipList!(Key, Cmp)* list)  @nogc
     {
-        list_ = list;
-        node_ = null;
+        m_list = list;
+        m_node = null;
     }
 
     /// 检查迭代器是否指向有效节点
     /// Returns: 若当前节点有效返回 true，否则返回 false
     bool valid() const 
     {
-        return node_ !is null;
+        return m_node !is null;
     }
 
     /// 获取当前节点的键
@@ -325,44 +325,44 @@ public:
     Key key() const 
     {
         assert(valid());
-        return node_.key;
+        return m_node.key;
     }
 
     /// 移动到下一个节点（向右移动）
     void next()  @nogc
     {
         assert(valid());
-        node_ = node_.nextAcquire(0);
+        m_node = m_node.nextAcquire(0);
     }
 
     /// 移动到上一个节点（向左移动）
     void prev()  @nogc
     {
         assert(valid());
-        node_ = list_.findLessThan(node_.key);
-        if (node_ == list_.head_)
-            node_ = null;
+        m_node = m_list.findLessThan(m_node.key);
+        if (m_node == m_list.m_head)
+            m_node = null;
     }
 
     /// 定位到第一个大于等于 target 的节点
     /// Params: target = 查找目标键
     void seek(Key target)  @nogc
     {
-        node_ = list_.findGreaterOrEqual(target, null);
+        m_node = m_list.findGreaterOrEqual(target, null);
     }
 
     /// 定位到跳表中的第一个节点
     void seekToFirst()  @nogc
     {
-        node_ = list_.head_.nextAcquire(0);
+        m_node = m_list.m_head.nextAcquire(0);
     }
 
     /// 定位到跳表中的最后一个节点
     void seekToLast()  @nogc
     {
-        node_ = list_.findLast();
-        if (node_ == list_.head_)
-            node_ = null;
+        m_node = m_list.findLast();
+        if (m_node == m_list.m_head)
+            m_node = null;
     }
 }
 
@@ -656,7 +656,7 @@ unittest
     // 高度应在合理范围内
     auto height = list.getMaxHeight();
     assert(height >= 1);
-    assert(height <= SkipList!(Slice, SliceComparator).kMaxHeight);
+    assert(height <= SkipList!(Slice, SliceComparator).maxHeight);
 }
 
 ///

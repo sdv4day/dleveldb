@@ -12,62 +12,62 @@ import std.format : format;
  */
 struct Slice
 {
-    const(ubyte)* data_ = null;
-    size_t size_ = 0;
+    const(ubyte)* m_data = null;
+    size_t m_size = 0;
 
     this(const(ubyte)[] arr) pure nothrow @trusted @nogc
     {
-        data_ = arr.ptr;
-        size_ = arr.length;
+        m_data = arr.ptr;
+        m_size = arr.length;
     }
 
     this(const(char)[] str) pure nothrow @trusted @nogc
     {
-        data_ = cast(const(ubyte)*) str.ptr;
-        size_ = str.length;
+        m_data = cast(const(ubyte)*) str.ptr;
+        m_size = str.length;
     }
 
     this(const void* ptr, size_t len) pure nothrow @safe @nogc
     {
-        data_ = cast(const(ubyte)*) ptr;
-        size_ = len;
+        m_data = cast(const(ubyte)*) ptr;
+        m_size = len;
     }
 
     /// 获取数据指针
-    const(ubyte)* data() const pure nothrow @safe @nogc { return data_; }
+    const(ubyte)* data() const pure nothrow @safe @nogc { return m_data; }
 
     /// 获取数据长度
-    size_t size() const pure nothrow @safe @nogc { return size_; }
+    size_t size() const pure nothrow @safe @nogc { return m_size; }
 
     /// 别名：兼容 _lib_obj_size__
     alias length = size;
 
     /// 是否为空
-    bool empty() const pure nothrow @safe @nogc { return size_ == 0; }
+    bool empty() const pure nothrow @safe @nogc { return m_size == 0; }
 
     /// 别名：兼容 etc.dleveldb.Slice
     alias isEmpty = empty;
 
     /// 是否有效（非空）
-    bool ok() const pure nothrow @safe @nogc { return size_ > 0; }
+    bool ok() const pure nothrow @safe @nogc { return m_size > 0; }
 
     /// 清空
     void clear() pure nothrow @safe @nogc
     {
-        data_ = null;
-        size_ = 0;
+        m_data = null;
+        m_size = 0;
     }
 
     /// 转为ubyte数组视图
     const(ubyte)[] asBytes() const pure nothrow @trusted @nogc
     {
-        return data_[0 .. size_];
+        return m_data[0 .. m_size];
     }
 
     /// 转为char数组视图
     const(char)[] asString() const pure nothrow @trusted @nogc
     {
-        return (cast(const(char)*) data_)[0 .. size_];
+        return (cast(const(char)*) m_data)[0 .. m_size];
     }
 
     /**
@@ -81,20 +81,20 @@ struct Slice
      */
     @property
     inout(T) as(T)() inout
-        if (!isPointer!T && __traits(compiles, *(cast(inout(T*)) data_)))
+        if (!isPointer!T && __traits(compiles, *(cast(inout(T*)) m_data)))
     {
         static if (isSomeString!T)
         {
-            return (cast(inout(T)) (cast(inout(char)*) data_)[0 .. size_]).idup;
+            return (cast(inout(T)) (cast(inout(char)*) m_data)[0 .. m_size]).idup;
         }
         else static if (isDynamicArray!T && !is(T == class))
         {
             import std.range.primitives : ElementEncodingType;
-            return cast(inout(T)) (cast(inout(ElementEncodingType!T)*) data_)[0 .. size_ / ElementEncodingType!T.sizeof];
+            return cast(inout(T)) (cast(inout(ElementEncodingType!T)*) m_data)[0 .. m_size / ElementEncodingType!T.sizeof];
         }
         else
         {
-            return *(cast(inout(T*)) data_);
+            return *(cast(inout(T*)) m_data);
         }
     }
 
@@ -109,7 +109,7 @@ struct Slice
     {
         static if (isPointer!T)
         {
-            return cast(inout(T)) data_;
+            return cast(inout(T)) m_data;
         }
         else
         {
@@ -164,21 +164,21 @@ struct Slice
     @property
     const(char)* _lib_obj_ptr__() const pure nothrow @trusted @nogc
     {
-        return cast(const(char)*) data_;
+        return cast(const(char)*) m_data;
     }
 
     /// 兼容接口：获取字节大小
     @property
     size_t _lib_obj_size__() const pure nothrow @safe @nogc
     {
-        return size_;
+        return m_size;
     }
 
     /// 比较两个Slice（使用 std.algorithm.cmp）
     int opCmp(Slice rhs) const nothrow @nogc
     {
         // 快速路径：短键直接整数比较（避免循环开销）
-        size_t minLen = size_ < rhs.size_ ? size_ : rhs.size_;
+        size_t minLen = m_size < rhs.m_size ? m_size : rhs.m_size;
         
         if (minLen <= 8)
         {
@@ -187,66 +187,66 @@ struct Slice
             // 大端序加载字节到整数（高位在前，保持字典序）
             for (size_t i = 0; i < minLen; i++)
             {
-                a = (a << 8) | data_[i];
-                b = (b << 8) | rhs.data_[i];
+                a = (a << 8) | m_data[i];
+                b = (b << 8) | rhs.m_data[i];
             }
             if (a < b) return -1;
             if (a > b) return 1;
             // 前缀相同，比较长度
-            return size_ < rhs.size_ ? -1 : (size_ > rhs.size_ ? 1 : 0);
+            return m_size < rhs.m_size ? -1 : (m_size > rhs.m_size ? 1 : 0);
         }
         
         // 长键使用标准库比较
         import std.algorithm.comparison : cmp;
-        return cmp(data_[0 .. size_], rhs.data_[0 .. rhs.size_]);
+        return cmp(m_data[0 .. m_size], rhs.m_data[0 .. rhs.m_size]);
     }
 
     /// 相等比较（使用D标准数组比较）
     bool opEquals(Slice rhs) const nothrow @nogc
     {
-        if (size_ != rhs.size_)
+        if (m_size != rhs.m_size)
             return false;
-        if (size_ == 0)
+        if (m_size == 0)
             return true;
-        return data_[0 .. size_] == rhs.data_[0 .. size_];
+        return m_data[0 .. m_size] == rhs.m_data[0 .. rhs.m_size];
     }
 
     /// 哈希值（使用MurmurHash3）
     size_t toHash() const nothrow @nogc
     {
         import dleveldb.hash : hash;
-        return cast(size_t) hash(Slice(data_, size_));
+        return cast(size_t) hash(Slice(m_data, m_size));
     }
 
     /// 前缀判断
     bool startsWith(Slice prefix) const nothrow @nogc
     {
-        return (size_ >= prefix.size_) && (Slice(data_[0 .. prefix.size_]) == prefix);
+        return (m_size >= prefix.m_size) && (Slice(m_data[0 .. prefix.m_size]) == prefix);
     }
 
     /// 后缀判断
     bool endsWith(Slice suffix) const nothrow @nogc
     {
-        return (size_ >= suffix.size_) &&
-            (Slice(data_[size_ - suffix.size_ .. size_]) == suffix);
+        return (m_size >= suffix.m_size) &&
+            (Slice(m_data[m_size - suffix.m_size .. m_size]) == suffix);
     }
 
     /// 去除前缀
     Slice removePrefix(size_t n) const pure nothrow @trusted @nogc
-    in (n <= size_)
+    in (n <= m_size)
     {
-        return Slice(data_ + n, size_ - n);
+        return Slice(m_data + n, m_size - n);
     }
 
     /// 字符串表示（用于调试）
     string toString() const
     {
         import std.format : format;
-        if (size_ <= 64)
+        if (m_size <= 64)
         {
             return asString().idup;
         }
-        return format("%s...(truncated %d bytes)", asString()[0 .. 64].idup, size_ - 64);
+        return format("%s...(truncated %d bytes)", asString()[0 .. 64].idup, m_size - 64);
     }
 }
 
@@ -323,19 +323,19 @@ struct OwnedSlice(T)
     import std.traits : Unqual;
     
 private:
-    Unqual!T storage_;
+    Unqual!T m_storage;
     
 public:
     /// 从值构造
     this(T value) pure nothrow @safe @nogc
     {
-        storage_ = cast(Unqual!T) value;
+        m_storage = cast(Unqual!T) value;
     }
     
     /// 获取底层 Slice
     Slice slice() const pure nothrow @trusted @nogc
     {
-        return Slice(cast(const(void*)) &storage_, Unqual!T.sizeof);
+        return Slice(cast(const(void*)) &m_storage, Unqual!T.sizeof);
     }
     
     /// 隐式转换为 Slice（使用 alias this）
@@ -344,7 +344,7 @@ public:
     /// 获取数据指针
     const(ubyte)* data() const pure nothrow @trusted @nogc
     {
-        return cast(const(ubyte*)) &storage_;
+        return cast(const(ubyte*)) &m_storage;
     }
     
     /// 获取数据大小
@@ -356,13 +356,13 @@ public:
     /// 获取原始值
     ref const(T) value() const pure nothrow @safe @nogc
     {
-        return *cast(const(T*)) &storage_;
+        return *cast(const(T*)) &m_storage;
     }
     
     /// 字符串表示
     string toString() const
     {
-        return format("OwnedSlice!%s(%s)", T.stringof, storage_);
+        return format("OwnedSlice!%s(%s)", T.stringof, m_storage);
     }
 }
 

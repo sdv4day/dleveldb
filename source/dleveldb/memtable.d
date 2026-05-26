@@ -119,7 +119,7 @@ public:
     /// type: 值类型（kTypeValue或kTypeDeletion）
     /// key: 用户键
     /// value: 值
-    void add(ulong seq, ValueType type, Slice key, Slice value) 
+    @trusted void add(ulong seq, ValueType type, Slice key, Slice value) 
     {
         // 编码格式：varint32(key_size+8) + user_key + packed_tag + varint32(val_size) + value
         size_t keySize = key.size();
