@@ -232,27 +232,42 @@ unittest
     batch.setSequence(100);
     assert(batch.sequence() == 100);
 
-    // iterate 回调验证
+    // iterate 回调验证 - 使用局部缓冲区避免 .idup
     class TestHandler : WriteBatchHandler
     {
         int putCount = 0;
         int delCount = 0;
-        string lastPutKey;
-        string lastPutValue;
-        string lastDelKey;
+        
+        // 使用固定大小缓冲区存储最后一个键值（测试结束自动销毁）
+        private char[64] lastPutKeyBuf;
+        private char[64] lastPutValueBuf;
+        private char[64] lastDelKeyBuf;
+        private size_t lastPutKeyLen;
+        private size_t lastPutValueLen;
+        private size_t lastDelKeyLen;
 
         void put(Slice key, Slice value)
         {
             putCount++;
-            lastPutKey = key.asString().idup;
-            lastPutValue = value.asString().idup;
+            // 拷贝到局部缓冲区（测试结束自动销毁）
+            lastPutKeyLen = key.size() < lastPutKeyBuf.length ? key.size() : lastPutKeyBuf.length;
+            lastPutValueLen = value.size() < lastPutValueBuf.length ? value.size() : lastPutValueBuf.length;
+            if (lastPutKeyLen > 0)
+                lastPutKeyBuf[0 .. lastPutKeyLen] = key.asString()[0 .. lastPutKeyLen];
+            if (lastPutValueLen > 0)
+                lastPutValueBuf[0 .. lastPutValueLen] = value.asString()[0 .. lastPutValueLen];
         }
 
         void remove(Slice key)
         {
             delCount++;
-            lastDelKey = key.asString().idup;
+            lastDelKeyLen = key.size() < lastDelKeyBuf.length ? key.size() : lastDelKeyBuf.length;
+            if (lastDelKeyLen > 0)
+                lastDelKeyBuf[0 .. lastDelKeyLen] = key.asString()[0 .. lastDelKeyLen];
         }
+        
+        // 辅助方法获取字符串
+        string getLastDelKey() { return lastDelKeyBuf[0 .. lastDelKeyLen].idup; }
     }
 
     auto handler = new TestHandler();
@@ -260,7 +275,7 @@ unittest
     assert(status.ok());
     assert(handler.putCount == 2);
     assert(handler.delCount == 1);
-    assert(handler.lastDelKey == "key3");
+    assert(handler.getLastDelKey() == "key3");
 
     // clear
     batch.clear();

@@ -15,6 +15,7 @@ import dleveldb.iterator;
 import dleveldb.merger;
 import dleveldb.filename;
 import std.path : buildPath;
+import std.logger;
 
 import core.sync.mutex;
 import core.atomic : atomicFetchAdd, atomicFetchSub;
@@ -360,7 +361,12 @@ public:
         Version v = new Version(this);
         for (int level = 0; level < kNumLevels; level++)
         {
-            v.setFiles(level, current_.files(level).dup);
+            auto srcFiles = current_.files(level);
+            // 优化：直接赋值而非 .dup，因为后续 applyEdit 会修改副本
+            // FileMetaData 是 struct，数组切片拷贝是浅拷贝，但元素是值类型
+            auto newFiles = new FileMetaData[srcFiles.length];
+            newFiles[] = srcFiles[];
+            v.setFiles(level, newFiles);
         }
 
         // 应用编辑
@@ -473,8 +479,7 @@ public:
             s = edit.decodeFrom(record);
             if (!s.ok())
             {
-                import std.stdio : stderr;
-                stderr.writeln("warning: version_set recover: skipping corrupted MANIFEST record: ", s.toString());
+                warning("version_set recover: skipping corrupted MANIFEST record: ", s.toString());
                 continue;
             }
 

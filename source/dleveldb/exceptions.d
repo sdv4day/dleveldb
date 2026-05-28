@@ -1,6 +1,7 @@
 module dleveldb.exceptions;
 
 import dleveldb.status;
+import std.format : format;
 
 /**
  * LevelDB 异常类
@@ -31,4 +32,26 @@ public:
 
     /// 获取状态码
     int code() const pure nothrow @safe @nogc { return code_; }
+}
+
+/**
+ * 键未找到异常
+ * 
+ * 当使用关联数组语法 db["key"] 访问不存在的键时抛出
+ */
+class KeyNotFoundException : LeveldbException
+{
+private:
+    string key_;
+
+public:
+    /// 从键构造
+    this(string key, string file = __FILE__, size_t line = __LINE__, Throwable next = null)
+    {
+        super(format("Key not found: %s", key), file, line, next);
+        key_ = key;
+    }
+
+    /// 获取未找到的键
+    string key() const pure nothrow @safe @nogc { return key_; }
 }

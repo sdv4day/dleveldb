@@ -25,6 +25,7 @@ import dleveldb.key_filter;
 import dleveldb.compression_filter;
 import dleveldb.builder;
 import dleveldb.table_builder;
+import std.logger;
 
 import core.sync.mutex;
 import core.sync.condition;
@@ -145,6 +146,9 @@ public:
         // 创建TableCache
         tableCache_ = new TableCache(dbname_, options_, options_.maxOpenFiles - 10);
 
+        // 创建SnapshotList
+        snapshots_ = new SnapshotList();
+
         // 创建VersionSet
         versions_ = new VersionSet(dbname_, options_, env_, userComparator_);
         versions_.setTableCache(tableCache_);
@@ -224,8 +228,6 @@ public:
         if (versions_ !is null)
         {
             versions_.closeResources();
-            // 手动调用析构函数，确保 current_.unref() 按正确顺序执行
-            destroy(versions_);
             versions_ = null;
         }
 
@@ -627,10 +629,16 @@ private:
     /// 执行后台压缩
     Status backgroundCompaction()
     {
+        import core.time : MonoTime;
+        auto startTime = MonoTime.currTime;
+        
         if (imm_ !is null)
         {
             // 压缩Immutable MemTable
-            return compactMemTable();
+            Status s = compactMemTable();
+            auto elapsed = MonoTime.currTime - startTime;
+            info("MemTable compaction completed in ", elapsed.total!"msecs", " ms");
+            return s;
         }
 
         // 层级压缩
@@ -648,11 +656,17 @@ private:
             c.edit().addFile(c.level() + 1, f.number, f.fileSize,
                 f.smallest, f.largest);
 
-            return versions_.logAndApply(c.edit());
+            Status s = versions_.logAndApply(c.edit());
+            auto elapsed = MonoTime.currTime - startTime;
+            info("Trivial move completed in ", elapsed.total!"msecs", " ms");
+            return s;
         }
 
         // 执行实际压缩
-        return doCompactionWork(c);
+        Status s = doCompactionWork(c);
+        auto elapsed = MonoTime.currTime - startTime;
+        info("Level ", c.level(), " compaction completed in ", elapsed.total!"msecs", " ms");
+        return s;
     }
 
     /// 压缩Immutable MemTable
@@ -945,8 +959,7 @@ private:
     /// 记录文件删除失败警告
     static void logRemoveFailure(string fname, Status s)
     {
-        import std.stdio : stderr;
-        stderr.writeln("warning: removeObsoleteFiles: failed to remove ", fname, ": ", s.toString());
+        warning("removeObsoleteFiles: failed to remove ", fname, ": ", s.toString());
     }
 }
 
@@ -987,18 +1000,8 @@ public:
     /// 析构带引用保护的数据库迭代器，释放mem/imm/current的引用
     ~this()
     {
-        if (!released_ && db_ !is null)
-        {
-            try
-            {
-                db_.releaseIteratorRefs(mem_, imm_, version_);
-            }
-            catch (Throwable)
-            {
-                // db_可能已被销毁，忽略异常
-            }
-            released_ = true;
-        }
+        // 不在析构函数中调用release(),避免GC回收时访问无效内存
+        // 调用者应显式调用release()
     }
 
     /// 显式释放迭代器引用（在close前调用，避免GC回收时访问已销毁的db_）

@@ -1,3 +1,6 @@
+# 编译输出目录
+bin/
+
 .dub
 docs.json
 __dummy.html
@@ -15,6 +18,8 @@ dleveldb-test-*
 *.o
 *.obj
 *.lst
+*selections.json
+.*/
 dub.selections.json
 .sisyphus/
 .arts/

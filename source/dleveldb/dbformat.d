@@ -16,15 +16,15 @@ enum ValueType : ubyte
 }
 
 /// 最大序列号（56位）
-enum ulong kMaxSequenceNumber = (1UL << 56) - 1;
+enum ulong maxSequenceNumber = (1UL << 56) - 1;
 
 /// packed tag 中值类型的位宽
-private enum kTagTypeBits = ubyte.sizeof * 8;
+private enum tagTypeBits = ubyte.sizeof * 8;
 
 /// 提取packed tag中的序列号
 ulong unpackSequence(ulong packedTag) pure nothrow @safe @nogc
 {
-    return packedTag >> kTagTypeBits;
+    return packedTag >> tagTypeBits;
 }
 
 /// 提取packed tag中的值类型
@@ -36,7 +36,7 @@ ValueType unpackValueType(ulong packedTag) pure nothrow @safe @nogc
 /// 打包序列号和值类型
 ulong packSequenceAndType(ulong seq, ValueType type) pure nothrow @safe @nogc
 {
-    return (seq << kTagTypeBits) | cast(ulong) type;
+    return (seq << tagTypeBits) | cast(ulong) type;
 }
 
 /**
@@ -292,12 +292,16 @@ ulong extractPackedTag(Slice internalKey) nothrow @trusted @nogc
 enum int kNumLevels = 7;
 /// L0层触发压缩的文件数阈值
 enum int kL0_CompactionTrigger = 4;
+
 /// L0层写入减速的文件数阈值
 enum int kL0_SlowdownWritesTrigger = 8;
+
 /// L0层停止写入的文件数阈值
 enum int kL0_StopWritesTrigger = 12;
+
 /// 内存压缩的最大层级
 enum int kMaxMemCompactLevel = 2;
+
 /// 读取字节数统计周期（1MB）
 enum size_t kReadBytesPeriod = 1048576; // 1MB
 
@@ -320,9 +324,9 @@ unittest
     auto packed0 = packSequenceAndType(0, ValueType.value);
     assert(unpackSequence(packed0) == 0);
 
-    // kMaxSequenceNumber
-    auto packedMax = packSequenceAndType(kMaxSequenceNumber, ValueType.value);
-    assert(unpackSequence(packedMax) == kMaxSequenceNumber);
+    // maxSequenceNumber
+    auto packedMax = packSequenceAndType(maxSequenceNumber, ValueType.value);
+    assert(unpackSequence(packedMax) == maxSequenceNumber);
 
     // InternalKey 构造与解析
     auto ikey = InternalKey(Slice("hello"), 10, ValueType.value);

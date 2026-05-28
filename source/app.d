@@ -1,8 +1,8 @@
-import std.stdio;
 import std.conv : text;
 import std.file : thisExePath;
 import std.path : dirName, buildPath;
 import core.time : MonoTime;
+import std.logger;
 import dleveldb.slice : Slice;
 import dleveldb.coding : encodeVarint32, encodeFixed32, encodeFixed64;
 import dleveldb.crc32c : crc32cValue;
@@ -18,12 +18,12 @@ void main()
     }
 
     auto exeDir = thisExePath().dirName;
-    writeln("dleveldb - 性能测试");
-    writeln("==================");
-    writeln();
+    info("dleveldb - 性能测试");
+    info("==================");
+    info("");
 
     // Slice比较
-    writeln("--- Slice操作 ---");
+    info("--- Slice操作 ---");
     {
         auto s1 = Slice("benchmark_key_12345");
         auto s2 = Slice("benchmark_key_12346");
@@ -34,7 +34,7 @@ void main()
             result += s1.opCmp(s2);
         auto elapsed = MonoTime.currTime - start;
         double ops = 100_000 * 1_000_000.0 / elapsed.total!"usecs";
-        writefln!"Slice比较 100K次: %4s ms (%8.0f ops/s)"(elapsed.total!"usecs"/1000, ops);
+        infof("Slice比较 100K次: %4s ms (%8.0f ops/s)", elapsed.total!"usecs"/1000, ops);
     }
 
     // Slice相等
@@ -48,7 +48,7 @@ void main()
             result = s1 == s2;
         auto elapsed = MonoTime.currTime - start;
         double ops = 100_000 * 1_000_000.0 / elapsed.total!"usecs";
-        writefln!"Slice相等 100K次: %4s ms (%8.0f ops/s)"(elapsed.total!"usecs"/1000, ops);
+        infof("Slice相等 100K次: %4s ms (%8.0f ops/s)", elapsed.total!"usecs"/1000, ops);
     }
 
     // Slice哈希
@@ -61,13 +61,13 @@ void main()
             h += s.toHash();
         auto elapsed = MonoTime.currTime - start;
         double ops = 100_000 * 1_000_000.0 / elapsed.total!"usecs";
-        writefln!"Slice哈希 100K次: %4s ms (%8.0f ops/s)"(elapsed.total!"usecs"/1000, ops);
+        infof("Slice哈希 100K次: %4s ms (%8.0f ops/s)", elapsed.total!"usecs"/1000, ops);
     }
 
-    writeln();
+    info("");
 
     // Varint编码
-    writeln("--- 编解码操作 ---");
+    info("--- 编解码操作 ---");
     {
         ubyte[10] buf;
         auto start = MonoTime.currTime;
@@ -75,7 +75,7 @@ void main()
             encodeVarint32(buf.ptr, cast(uint) i);
         auto elapsed = MonoTime.currTime - start;
         double ops = 1_000_000 * 1_000_000.0 / elapsed.total!"usecs";
-        writefln!"Varint32编码 1M次: %4s ms (%8.0f ops/s)"(elapsed.total!"usecs"/1000, ops);
+        infof("Varint32编码 1M次: %4s ms (%8.0f ops/s)", elapsed.total!"usecs"/1000, ops);
     }
 
     // Fixed编码
@@ -89,13 +89,13 @@ void main()
         }
         auto elapsed = MonoTime.currTime - start;
         double ops = 1_000_000 * 1_000_000.0 / elapsed.total!"usecs";
-        writefln!"Fixed32/64编码 1M次: %4s ms (%8.0f ops/s)"(elapsed.total!"usecs"/1000, ops);
+        infof("Fixed32/64编码 1M次: %4s ms (%8.0f ops/s)", elapsed.total!"usecs"/1000, ops);
     }
 
-    writeln();
+    info("");
 
     // CRC32C
-    writeln("--- CRC32C校验 ---");
+    info("--- CRC32C校验 ---");
     {
         ubyte[256] data;
         data[] = 0xAB;
@@ -106,7 +106,7 @@ void main()
         auto elapsed = MonoTime.currTime - start;
         double ops = 100_000 * 1_000_000.0 / elapsed.total!"usecs";
         double mbps = 100_000 * 256.0 / (elapsed.total!"usecs" * 1.024);
-        writefln!"CRC32C 100K次(256B): %4s ms (%8.0f ops/s, %.1f MB/s)"(elapsed.total!"usecs"/1000, ops, mbps);
+        infof("CRC32C 100K次(256B): %4s ms (%8.0f ops/s, %.1f MB/s)", elapsed.total!"usecs"/1000, ops, mbps);
     }
 
     // CRC32C大块
@@ -120,13 +120,13 @@ void main()
         auto elapsed = MonoTime.currTime - start;
         double ops = 10_000 * 1_000_000.0 / elapsed.total!"usecs";
         double mbps = 10_000 * 4096.0 / (elapsed.total!"usecs" * 1.024);
-        writefln!"CRC32C 10K次(4KB):  %4s ms (%8.0f ops/s, %.1f MB/s)"(elapsed.total!"usecs"/1000, ops, mbps);
+        infof("CRC32C 10K次(4KB):  %4s ms (%8.0f ops/s, %.1f MB/s)", elapsed.total!"usecs"/1000, ops, mbps);
     }
 
-    writeln();
+    info("");
 
     // Hash函数
-    writeln("--- Hash函数 ---");
+    info("--- Hash函数 ---");
     {
         auto s = Slice("hash_benchmark_key");
         auto start = MonoTime.currTime;
@@ -135,20 +135,20 @@ void main()
             h += hash(s);
         auto elapsed = MonoTime.currTime - start;
         double ops = 100_000 * 1_000_000.0 / elapsed.total!"usecs";
-        writefln!"MurmurHash 100K次: %4s ms (%8.0f ops/s)"(elapsed.total!"usecs"/1000, ops);
+        infof("MurmurHash 100K次: %4s ms (%8.0f ops/s)", elapsed.total!"usecs"/1000, ops);
     }
 
-    writeln();
-    writeln("底层组件性能测试完成.");
-    writeln();
+    info("");
+    info("底层组件性能测试完成.");
+    info("");
 
     // DB操作性能测试
-    writeln("=== DB操作性能测试 ===");
+    info("=== DB操作性能测试 ===");
     benchDbOperations(exeDir);
 
     // 多线程并发性能测试
-    writeln();
-    writeln("=== 多线程并发性能测试 ===");
+    info("");
+    info("=== 多线程并发性能测试 ===");
     benchMultiThreaded(exeDir);
 }
 
@@ -164,7 +164,7 @@ void benchDbOperations(string exeDir)
     options.createIfMissing = true;
 
     auto db = new LevelDB(options, dbPath);
-    writefln("数据库已打开[%s]",dbPath);
+    infof("数据库已打开[%s]", dbPath);
 
     // 顺序写
     {
@@ -178,7 +178,7 @@ void benchDbOperations(string exeDir)
         }
         auto elapsed = MonoTime.currTime - start;
         double ops = count * 1_000_000.0 / elapsed.total!"usecs";
-        writefln!"DB顺序写 %4d 条: %4s ms (%8.0f ops/s)"(count, elapsed.total!"usecs"/1000, ops);
+        infof("DB顺序写 %4d 条: %4s ms (%8.0f ops/s)", count, elapsed.total!"usecs"/1000, ops);
     }
 
     // 随机读
@@ -195,7 +195,7 @@ void benchDbOperations(string exeDir)
         }
         auto elapsed = MonoTime.currTime - start;
         double ops = count * 1_000_000.0 / elapsed.total!"usecs";
-        writefln!"DB随机读 %4d 条: %4s ms (%8.0f ops/s) 命中: %d"(count, elapsed.total!"usecs"/1000, ops, found);
+        infof("DB随机读 %4d 条: %4s ms (%8.0f ops/s) 命中: %d", count, elapsed.total!"usecs"/1000, ops, found);
     }
 
     // WriteBatch批量写
@@ -216,7 +216,7 @@ void benchDbOperations(string exeDir)
         }
         auto elapsed = MonoTime.currTime - start;
         double ops = count * 1_000_000.0 / elapsed.total!"usecs";
-        writefln!"DB批量写 %4d 条: %4s ms (%8.0f ops/s)"(count, elapsed.total!"usecs"/1000, ops);
+        infof("DB批量写 %4d 条: %4s ms (%8.0f ops/s)", count, elapsed.total!"usecs"/1000, ops);
     }
 
     // 删除
@@ -230,13 +230,13 @@ void benchDbOperations(string exeDir)
         }
         auto elapsed = MonoTime.currTime - start;
         double ops = count * 1_000_000.0 / elapsed.total!"usecs";
-        writefln!"DB删除 %4d 条: %4s ms (%8.0f ops/s)"(count, elapsed.total!"usecs"/1000, ops);
+        infof("DB删除 %4d 条: %4s ms (%8.0f ops/s)", count, elapsed.total!"usecs"/1000, ops);
     }
 
     // 关闭数据库
     db.close();
-    writeln();
-    writeln("DB操作性能测试完成.");
+    info("");
+    info("DB操作性能测试完成.");
 
     // 清理测试目录
     safeRmdirRecurse(dbPath);
@@ -265,22 +265,18 @@ void benchMultiThreaded(string exeDir)
     }
 
     // 准备测试数据
-    // 注意：LevelDB 实现在触发 memtable 切换后存在读取 bug，
-    // 因此这里只使用小数据量，避免触发 compaction 路径。
-    writeln("\n准备测试数据...");
+    info("\n准备测试数据...");
     size_t dataCount = 5_000;
     {
         auto start = MonoTime.currTime;
         foreach (i; iota(dataCount))
             db.put(Slice(text("key_", i)), Slice(text("val_", i)));
         auto elapsed = MonoTime.currTime - start;
-        writefln!"写入 %d 条数据: %s ms"(dataCount, elapsed.total!"usecs" / 1000);
+        infof("写入 %d 条数据: %s ms", dataCount, elapsed.total!"usecs" / 1000);
     }
 
-    // ──────────────────────────────────────────
     // 1. 并发读测试
-    // ──────────────────────────────────────────
-    writeln("\n--- 1. 并发读测试 ---");
+    info("\n--- 1. 并发读测试 ---");
     {
         size_t nThreads = 4;
         size_t opsPerThread = 10_000;
@@ -292,7 +288,7 @@ void benchMultiThreaded(string exeDir)
 
         foreach (ti; iota(nThreads))
         {
-            immutable tiLocal = ti; // 闭包捕获局部拷贝，避免循环变量引用问题
+            immutable tiLocal = ti;
             pool.put(task({
                 size_t found = 0;
                 foreach (j; iota(opsPerThread))
@@ -311,10 +307,10 @@ void benchMultiThreaded(string exeDir)
         size_t totalFound = 0;
         foreach (r; foundCount) totalFound += r;
         double ops = (nThreads * opsPerThread) * 1_000_000.0 / elapsed.total!"usecs";
-        writefln!"并发读 %d线程 x %d次: %4s ms (%8.0f ops/s) 命中: %d"
-            (nThreads, opsPerThread, elapsed.total!"usecs" / 1000, ops, totalFound);
+        infof("并发读 %d线程 x %d次: %4s ms (%8.0f ops/s) 命中: %d",
+            nThreads, opsPerThread, elapsed.total!"usecs" / 1000, ops, totalFound);
 
-        // 并发读后验证 DB 状态是否完好
+        // 并发读后验证
         {
             size_t after = 0;
             foreach (i; iota(500))
@@ -323,10 +319,10 @@ void benchMultiThreaded(string exeDir)
                 if (db.get(Slice(text("key_", i)), value))
                     after++;
             }
-            writefln!"并发读后验证(前500条): 命中 %d/500"(after);
+            infof("并发读后验证(前500条): 命中 %d/500", after);
         }
 
-        // 单线程对比（只读已确认存在的键范围）
+        // 单线程对比
         {
             size_t safeCount = nThreads * opsPerThread;
             if (safeCount > dataCount) safeCount = dataCount;
@@ -340,15 +336,13 @@ void benchMultiThreaded(string exeDir)
             }
             auto elapsed2 = MonoTime.currTime - start2;
             double ops2 = safeCount * 1_000_000.0 / elapsed2.total!"usecs";
-            writefln!"单线程读 对比: %4s ms (%8.0f ops/s) 命中: %d 加速比: %.2fx"
-                (elapsed2.total!"usecs" / 1000, ops2, found2, ops / ops2);
+            infof("单线程读 对比: %4s ms (%8.0f ops/s) 命中: %d 加速比: %.2fx",
+                elapsed2.total!"usecs" / 1000, ops2, found2, ops / ops2);
         }
     }
 
-    // ──────────────────────────────────────────
-    // 2. 并发写测试（分片键空间避免冲突）
-    // ──────────────────────────────────────────
-    writeln("\n--- 2. 并发写测试 ---");
+    // 2. 并发写测试
+    info("\n--- 2. 并发写测试 ---");
     {
         size_t nThreads = 4;
         size_t opsPerThread = 1_000;
@@ -359,7 +353,7 @@ void benchMultiThreaded(string exeDir)
 
         foreach (ti; iota(nThreads))
         {
-            immutable tiLocal = ti; // 闭包捕获局部拷贝
+            immutable tiLocal = ti;
             pool.put(task({
                 foreach (j; iota(opsPerThread))
                 {
@@ -372,8 +366,8 @@ void benchMultiThreaded(string exeDir)
         auto elapsed = MonoTime.currTime - start;
 
         double ops = (nThreads * opsPerThread) * 1_000_000.0 / elapsed.total!"usecs";
-        writefln!"并发写 %d线程 x %d次: %4s ms (%8.0f ops/s)"
-            (nThreads, opsPerThread, elapsed.total!"usecs" / 1000, ops);
+        infof("并发写 %d线程 x %d次: %4s ms (%8.0f ops/s)",
+            nThreads, opsPerThread, elapsed.total!"usecs" / 1000, ops);
 
         // 验证写入
         size_t verified = 0;
@@ -383,13 +377,11 @@ void benchMultiThreaded(string exeDir)
             if (db.get(Slice(text("con_w_", i)), value))
                 verified++;
         }
-        writefln!"写入验证: %d/%d 条可读"(verified, nThreads * opsPerThread);
+        infof("写入验证: %d/%d 条可读", verified, nThreads * opsPerThread);
     }
 
-    // ──────────────────────────────────────────
-    // 3. 后台任务调度测试（Env.schedule / TaskPool）
-    // ──────────────────────────────────────────
-    writeln("\n--- 3. 后台任务调度测试 ---");
+    // 3. 后台任务调度测试
+    info("\n--- 3. 后台任务调度测试 ---");
     {
         import dleveldb.env : defaultEnv;
 
@@ -405,7 +397,6 @@ void benchMultiThreaded(string exeDir)
             });
         }
 
-        // 等待后台任务完成（最多 5s）
         bool allDone = false;
         foreach (_; iota(500))
         {
@@ -419,14 +410,12 @@ void benchMultiThreaded(string exeDir)
         }
         auto elapsed = MonoTime.currTime - start;
 
-        writefln!"后台调度 %d 任务: %s ms (完成: %s)"
-            (nTasks, elapsed.total!"usecs" / 1000, allDone ? "全部完成" : "超时");
+        infof("后台调度 %d 任务: %s ms (完成: %s)",
+            nTasks, elapsed.total!"usecs" / 1000, allDone ? "全部完成" : "超时");
     }
 
-    // ──────────────────────────────────────────
     // 4. 混合读写测试
-    // ──────────────────────────────────────────
-    writeln("\n--- 4. 混合读写测试 ---");
+    info("\n--- 4. 混合读写测试 ---");
     {
         size_t nThreads = 4;
         size_t opsPerThread = 1_500;
@@ -438,20 +427,18 @@ void benchMultiThreaded(string exeDir)
 
         foreach (ti; iota(nThreads))
         {
-            immutable tiLocal = ti; // 闭包捕获局部拷贝
+            immutable tiLocal = ti;
             pool.put(task({
                 size_t localFound = 0;
                 foreach (j; iota(opsPerThread))
                 {
                     if (j % 4 == 0)
                     {
-                        // 每 4 次操作写 1 次
                         size_t idx = tiLocal * opsPerThread + j;
                         db.put(Slice(text("mix_w_", idx)), Slice(text("mix_v_", idx)));
                     }
                     else
                     {
-                        // 其余读
                         size_t idx = j % dataCount;
                         string value;
                         if (db.get(Slice(text("key_", idx)), value))
@@ -468,15 +455,15 @@ void benchMultiThreaded(string exeDir)
         foreach (r; results) totalFound += r;
         size_t totalOps = nThreads * opsPerThread;
         double ops = totalOps * 1_000_000.0 / elapsed.total!"usecs";
-        writefln!"混合读写 %d线程 x %d次(25%%写): %4s ms (%8.0f ops/s) 读命中: %d"
-            (nThreads, opsPerThread, elapsed.total!"usecs" / 1000, ops, totalFound);
+        infof("混合读写 %d线程 x %d次(25%%写): %4s ms (%8.0f ops/s) 读命中: %d",
+            nThreads, opsPerThread, elapsed.total!"usecs" / 1000, ops, totalFound);
     }
 
-    writeln();
-    writeln("多线程并发性能测试完成.");
+    info("");
+    info("多线程并发性能测试完成.");
 }
 
-/// 安全删除目录（Windows上文件锁可能有短暂延迟，自动重试）
+/// 安全删除目录
 void safeRmdirRecurse(string path)
 {
     import std.file : exists, rmdirRecurse;
@@ -497,10 +484,10 @@ void safeRmdirRecurse(string path)
         {
             if (attempt >= 4)
             {
-                writeln("清理目录失败（重试已耗尽）: ", e.msg);
+                warning("清理目录失败（重试已耗尽）: ", e.msg);
                 return;
             }
-            writeln("清理目录重试 #", attempt + 1, ": ", e.msg);
+            warning("清理目录重试 #", attempt + 1, ": ", e.msg);
             Thread.sleep(dur!"msecs"(200));
         }
     }

@@ -9,12 +9,21 @@
 		"source"
 	],
 	"description": "A LevelDB-compatible key-value storage engine written in D",
+	"targetPath": "bin",
 	"dependencies": {
+		"deimos-snappy": "*",
 		"cachetools": "~>1.0.1",
+		"deimos-zstd": "*",
 		"silly": "~>1.1.1"
 	},
 	"targetType": "library",
 	"buildTypes": {
+		"release": {
+			"buildOptions": [
+				"optimize",
+				"inline"
+			]
+		},
 		"debug": {
 			"buildOptions": [
 				"debugMode",
@@ -49,19 +58,19 @@
 			"name": "unittest"
 		},
 		{
-			"mainSourceFile": "source/app.d",
 			"excludedSourceFiles": [
 				"source/dual_test_app.d",
 				"source/dleveldb/dual_db_test.d"
 			],
+			"mainSourceFile": "source/app.d",
 			"targetType": "executable",
 			"name": "benchmark"
 		},
 		{
-			"mainSourceFile": "source/dual_test_app.d",
 			"excludedSourceFiles": [
 				"source/app.d"
 			],
+			"mainSourceFile": "source/dual_test_app.d",
 			"targetType": "executable",
 			"name": "dual_test"
 		}

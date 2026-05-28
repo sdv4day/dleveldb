@@ -36,38 +36,38 @@ public:
 
     ~this()
     {
-        if (db_ !is null && db_.isOpen)
-            db_.close();
+        // 不在析构函数中调用close(),避免GC回收时访问无效内存
+        // 调用者应显式调用close()
     }
 
     /// 写入
     void put(V)(in ulong key, in V val, const(WriteOptions) opt = defaultWriteOptions)
     {
-        db_.put(Slice.Ref(key), val, opt);
+        db_.put(Slice.owned(key), val, opt);
     }
 
     /// 读取
     bool get(V)(in ulong key, out V val, const(ReadOptions) opt = defaultReadOptions)
     {
-        return db_.get(Slice.Ref(key), val, opt);
+        return db_.get(Slice.owned(key), val, opt);
     }
 
     /// 删除
     void del(in ulong key, const(WriteOptions) opt = defaultWriteOptions)
     {
-        db_.del(Slice.Ref(key), opt);
+        db_.del(Slice.owned(key), opt);
     }
 
     /// 查找，不存在返回默认值
     V find(V)(in ulong key, V def, const(ReadOptions) opt = defaultReadOptions)
     {
-        return db_.find(Slice.Ref(key), def, opt);
+        return db_.find(Slice.owned(key), def, opt);
     }
 
     /// 获取 Slice
     auto getSlice(in ulong key, const(ReadOptions) opt = defaultReadOptions)
     {
-        return db_.getSlice(Slice.Ref(key), opt);
+        return db_.getSlice(Slice.owned(key), opt);
     }
 
     /// 创建迭代器

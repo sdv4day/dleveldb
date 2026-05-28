@@ -232,8 +232,8 @@ public:
 
     ~this()
     {
-        if (file_.isOpen())
-            file_.close();
+        // 不在析构函数中调用close(),避免GC回收时访问无效内存
+        // 调用者应显式调用close()
     }
 
     Status read(size_t n, ref Slice result, ubyte[] scratch)
@@ -288,6 +288,13 @@ public:
 
     ~this()
     {
+        // 不在析构函数中调用close(),避免GC回收时访问无效内存
+        // 调用者应显式调用close()
+    }
+
+    /// 关闭文件
+    void close()
+    {
         if (file_.isOpen())
             file_.close();
     }
@@ -336,8 +343,8 @@ public:
 
     ~this()
     {
-        if (!closed_)
-            close();
+        // 不在析构函数中调用close(),避免GC回收时访问无效内存
+        // 调用者应显式调用close()
     }
 
     Status append(Slice data)
@@ -442,8 +449,8 @@ public:
 
     ~this()
     {
-        if (file_.isOpen())
-            file_.close();
+        // 不在析构函数中调用close(),避免GC回收时访问无效内存
+        // 调用者应显式调用close()
     }
 
     void logv(string msg)
@@ -681,8 +688,8 @@ version (Windows)
 
         ~this()
         {
-            if (hFile_ != INVALID_HANDLE_VALUE)
-                CloseHandle(hFile_);
+            // 不在析构函数中调用CloseHandle,避免GC回收时访问无效内存
+            // 调用者应显式调用close()
         }
     }
 
