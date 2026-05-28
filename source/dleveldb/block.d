@@ -21,8 +21,10 @@ private:
     size_t restartsOffset_;
 
 public:
-    /// 构造数据块
-    /// Params: data = 包含块数据的Slice，末尾4字节为重启点数量
+    /**
+     * 构造数据块
+     * Params: data = 包含块数据的Slice，末尾4字节为重启点数量
+     */
     this(Slice data)
     {
         data_ = data;
@@ -84,10 +86,12 @@ private:
     Status status_;
     bool valid_;
 public:
-    /// 构造块内迭代器
-    /// Params:
-    ///     block = 要迭代的数据块
-    ///     cmp   = 键比较器，用于seek时的二分搜索
+    /**
+     * 构造块内迭代器
+     * Params:
+     *     block = 要迭代的数据块
+     *     cmp   = 键比较器，用于seek时的二分搜索
+     */
     this(Block block, Comparator cmp) nothrow
     {
         block_ = block;
@@ -97,18 +101,26 @@ public:
         valid_ = false;
     }
 
-    /// 检查迭代器是否指向有效条目
-    /// Returns: 若当前指向有效条目则返回true，否则返回false
+    /**
+     * 检查迭代器是否指向有效条目
+     * Returns: 若当前指向有效条目则返回true，否则返回false
+     */
     bool valid() const nothrow @nogc { return valid_; }
 
-    /// 获取当前条目的键
-    /// Returns: 当前键的Slice引用
+    /**
+     * 获取当前条目的键
+     * Returns: 当前键的Slice引用
+     */
     Slice key() nothrow @nogc { return key_; }
-    /// 获取当前条目的值
-    /// Returns: 当前值的Slice引用
+    /**
+     * 获取当前条目的值
+     * Returns: 当前值的Slice引用
+     */
     Slice value() nothrow @nogc { return value_; }
-    /// 获取迭代器的错误状态
-    /// Returns: 若解码过程中发生错误则返回对应的错误状态，否则返回OK状态
+    /**
+     * 获取迭代器的错误状态
+     * Returns: 若解码过程中发生错误则返回对应的错误状态，否则返回OK状态
+     */
     Status status() const nothrow @nogc { return status_; }
 
     /// 定位到块内第一个条目
@@ -157,8 +169,10 @@ public:
         }
     }
 
-    /// 定位到键大于等于target的第一个条目
-    /// Params: target = 要查找的目标键
+    /**
+     * 定位到键大于等于target的第一个条目
+     * Params: target = 要查找的目标键
+     */
     void seek(Slice target)
     {
         // 二分搜索找到target所在的重启点
@@ -191,8 +205,10 @@ public:
         }
     }
 
-    /// 移动到下一个条目
-    /// 调用前必须保证valid()为true
+    /**
+     * 移动到下一个条目
+     * 调用前必须保证valid()为true
+     */
     void next()
     {
         assert(valid_);
@@ -276,8 +292,10 @@ public:
         }
     }
 
-    /// 移动到上一个条目
-    /// 调用前必须保证valid()为true
+    /**
+     * 移动到上一个条目
+     * 调用前必须保证valid()为true
+     */
     void prev()
     {
         assert(valid_);

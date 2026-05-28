@@ -277,7 +277,12 @@ private:
 
 public:
     /// 构造版本集合管理器
-    /// Params: dbname = 数据库名称, options = 数据库选项, env = 环境接口, userCmp = 用户键比较器
+    ///
+    /// Params:
+    ///     dbname = 数据库名称
+    ///     options = 数据库选项
+    ///     env = 环境接口
+    ///     userCmp = 用户键比较器
     this(string dbname, Options options, Env env, Comparator userCmp)
     {
         dbname_ = dbname;

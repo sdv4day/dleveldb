@@ -1,3 +1,13 @@
+/**
+ * 数据库配置选项
+ *
+ * 定义数据库的创建、读写选项，包括缓存大小、压缩算法、
+ * 过滤器策略等配置参数。
+ *
+ * Copyright: BSL-1.0
+ * Authors: sdv
+ * Date: 2024
+ */
 module dleveldb.options;
 
 import dleveldb.comparator;

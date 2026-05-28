@@ -22,7 +22,10 @@ private:
 
 public:
     /// 构造WAL日志写入器
-    /// Params: dest = 目标可写文件, destLength = 当前文件长度
+    ///
+    /// Params:
+    ///     dest = 目标可写文件
+    ///     destLength = 当前文件长度
     this(WritableFile dest, ulong destLength = 0)
     {
         dest_ = dest;

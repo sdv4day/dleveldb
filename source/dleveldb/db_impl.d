@@ -94,8 +94,10 @@ private:
 
 public:
     /// 构造DBImpl实例
-    /// Params: options = 数据库配置选项
-    /// Params: dbname = 数据库目录路径
+    ///
+    /// Params:
+    ///     options = 数据库配置选项
+    ///     dbname = 数据库目录路径
     this(Options options, string dbname)
     {
         dbname_ = dbname;
@@ -965,11 +967,13 @@ private:
 
 public:
     /// 构造带引用保护的数据库迭代器
-    /// Params: inner = 内部迭代器
-    /// Params: db = 所属DBImpl实例
-    /// Params: mem = 活跃MemTable引用
-    /// Params: imm = Immutable MemTable引用
-    /// Params: ver = 当前Version引用
+    ///
+    /// Params:
+    ///     inner = 内部迭代器
+    ///     db = 所属DBImpl实例
+    ///     mem = 活跃MemTable引用
+    ///     imm = Immutable MemTable引用
+    ///     ver = 当前Version引用
     this(Iterator inner, DBImpl db, MemTable mem, MemTable imm, Version ver)
     {
         inner_ = inner;

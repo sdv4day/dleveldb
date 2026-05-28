@@ -1,3 +1,13 @@
+/**
+ * 操作结果状态封装 (Status)
+ *
+ * 提供类似C++ leveldb::Status的错误处理机制，
+ * 使用短字符串优化，OK状态为零开销。
+ *
+ * Copyright: BSL-1.0
+ * Authors: sdv
+ * Date: 2024
+ */
 module dleveldb.status;
 
 import dleveldb.slice;
@@ -24,7 +34,10 @@ struct Status
     private Code code_ = Code.ok;
 
     /// 构造指定状态码和消息的状态
-    /// Params: code = 状态码, msg = 状态消息
+    ///
+    /// Params:
+    ///     code = 状态码
+    ///     msg = 状态消息
     this(Code code, string msg)
     {
         code_ = code;

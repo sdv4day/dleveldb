@@ -1,3 +1,12 @@
+/**
+ * LevelDB 核心数据库类定义
+ *
+ * 这是dleveldb库的主要用户接口，提供泛型的键值存储操作。
+ * 
+ * Copyright: BSL-1.0
+ * Authors: sdv
+ * Date: 2024
+ */
 module dleveldb.db;
 
 import dleveldb.slice;

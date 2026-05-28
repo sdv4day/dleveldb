@@ -23,8 +23,10 @@ private:
     enum kBlockSize = 4096; // 默认块大小4KB
 
 public:
-    /// 构造Arena内存池分配器
-    /// Params: backend = 底层分配器，为null时使用Mallocator
+    /**
+     * 构造Arena内存池分配器
+     * Params: backend = 底层分配器，为null时使用Mallocator
+     */
     this(IAllocator backend = null)
     {
         backend_ = backend;

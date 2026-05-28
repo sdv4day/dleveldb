@@ -89,22 +89,34 @@ interface Env
     // 文件操作
 
     /// 创建顺序读取文件
-    /// Params: fname = 文件名, result = 输出的文件对象
+    ///
+    /// Params:
+    ///     fname = 文件名
+    ///     result = 输出的文件对象
     /// Returns: 操作状态
     Status newSequentialFile(string fname, out SequentialFile result);
 
     /// 创建随机读取文件
-    /// Params: fname = 文件名, result = 输出的文件对象
+    ///
+    /// Params:
+    ///     fname = 文件名
+    ///     result = 输出的文件对象
     /// Returns: 操作状态
     Status newRandomAccessFile(string fname, out RandomAccessFile result);
 
     /// 创建可写文件
-    /// Params: fname = 文件名, result = 输出的文件对象
+    ///
+    /// Params:
+    ///     fname = 文件名
+    ///     result = 输出的文件对象
     /// Returns: 操作状态
     Status newWritableFile(string fname, out WritableFile result);
 
     /// 创建可追加写入文件
-    /// Params: fname = 文件名, result = 输出的文件对象
+    ///
+    /// Params:
+    ///     fname = 文件名
+    ///     result = 输出的文件对象
     /// Returns: 操作状态
     Status newAppendableFile(string fname, out WritableFile result);
 
@@ -116,7 +128,10 @@ interface Env
     bool fileExists(string fname) const;
 
     /// 获取目录下的子项名称列表
-    /// Params: dir = 目录路径, result = 输出的名称数组
+    ///
+    /// Params:
+    ///     dir = 目录路径
+    ///     result = 输出的名称数组
     /// Returns: 操作状态
     Status getChildren(string dir, out string[] result);
 
@@ -136,17 +151,26 @@ interface Env
     Status removeDir(string dir);
 
     /// 获取文件大小
-    /// Params: fname = 文件名, size = 输出的文件字节数
+    ///
+    /// Params:
+    ///     fname = 文件名
+    ///     size = 输出的文件字节数
     /// Returns: 操作状态
     Status getFileSize(string fname, out ulong size);
 
     /// 重命名文件
-    /// Params: src = 源文件名, dst = 目标文件名
+    ///
+    /// Params:
+    ///     src = 源文件名
+    ///     dst = 目标文件名
     /// Returns: 操作状态
     Status renameFile(string src, string dst);
 
     /// 锁定文件
-    /// Params: fname = 文件名, lock = 输出的文件锁对象
+    ///
+    /// Params:
+    ///     fname = 文件名
+    ///     lock = 输出的文件锁对象
     /// Returns: 操作状态
     Status lockFile(string fname, out FileLock lock);
 
@@ -178,7 +202,10 @@ interface Env
     // 日志
 
     /// 创建日志写入器
-    /// Params: fname = 日志文件名, result = 输出的 Logger 对象
+    ///
+    /// Params:
+    ///     fname = 日志文件名
+    ///     result = 输出的 Logger 对象
     /// Returns: 操作状态
     Status newLogger(string fname, out Logger result);
 }

@@ -1,3 +1,12 @@
+/**
+ * 批量写入操作 (WriteBatch)
+ *
+ * 提供原子性的批量写入功能，支持在一次事务中执行多个put/delete操作。
+ *
+ * Copyright: BSL-1.0
+ * Authors: sdv
+ * Date: 2024
+ */
 module dleveldb.write_batch;
 
 import dleveldb.slice;

@@ -285,8 +285,10 @@ ulong extractPackedTag(Slice internalKey) nothrow @trusted @nogc
     return decodeFixed64(internalKey.data() + internalKey.size() - ulong.sizeof);
 }
 
-/// 配置常量
-/// LSM树的层数
+/**
+ * 配置常量
+ * LSM树的层数
+ */
 enum int kNumLevels = 7;
 /// L0层触发压缩的文件数阈值
 enum int kL0_CompactionTrigger = 4;

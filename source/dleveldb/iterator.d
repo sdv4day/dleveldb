@@ -1,3 +1,12 @@
+/**
+ * 迭代器抽象接口
+ *
+ * 提供有序键值对的遍历能力。所有迭代器实现都遵循相同的语义。
+ *
+ * Copyright: BSL-1.0
+ * Authors: sdv
+ * Date: 2024
+ */
 module dleveldb.iterator;
 
 import dleveldb.slice;

@@ -46,7 +46,11 @@ private:
 
 public:
     /// 构造SSTable构建器
-    /// Params: options = 构建选项, file = 可写文件, icmp = 内部键比较器
+    ///
+    /// Params:
+    ///     options = 构建选项
+    ///     file = 可写文件
+    ///     icmp = 内部键比较器
     this(Options options, WritableFile file, InternalKeyComparator icmp)
     {
         options_ = options;

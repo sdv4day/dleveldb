@@ -1,3 +1,13 @@
+/**
+ * 键比较器接口和实现
+ *
+ * 提供键比较功能，用于有序存储和查找。
+ * 默认实现为字节序比较器。
+ *
+ * Copyright: BSL-1.0
+ * Authors: sdv
+ * Date: 2024
+ */
 module dleveldb.comparator;
 
 import dleveldb.slice;
@@ -13,8 +23,10 @@ interface Comparator
     /// 比较两个Slice，返回-1/0/1
     int compare(Slice a, Slice b) const nothrow @nogc;
 
-    /// 查找短分隔符（用于SSTable索引块优化）
-    /// 找到[start, limit]之间的短字符串separator
+    /**
+     * 查找短分隔符（用于SSTable索引块优化）
+     * 找到[start, limit]之间的短字符串separator
+     */
     void findShortestSeparator(ref Slice start, Slice limit) const;
 
     /// 查找小于所有大于key的键的短键
@@ -26,27 +38,38 @@ interface Comparator
  */
 class BytewiseComparator : Comparator
 {
-    /// 获取比较器名称
-    /// Returns: 比较器名称字符串，用于MANIFEST持久化标识
+    /**
+     * 获取比较器名称
+     * Returns: 比较器名称字符串，用于MANIFEST持久化标识
+     */
     string name() const
     {
         return "dleveldb.BytewiseComparator";
     }
 
-    /// 比较两个键的字节序大小
-    /// Params: a = 第一个键
-    /// Params: b = 第二个键
-    /// Returns: 小于0表示a<b，等于0表示a==b，大于0表示a>b
+    /**
+     * 比较两个键的字节序大小
+     *
+     * Params:
+     *     a = 第一个键
+     *     b = 第二个键
+     * Returns: 小于0表示a<b，等于0表示a==b，大于0表示a>b
+     */
     int compare(Slice a, Slice b) const nothrow @nogc
     {
         return a.opCmp(b);
     }
 
-    /// 找最短分隔键，用于SSTable索引块优化
-    /// 在[start, limit]之间找到一个尽可能短的字符串作为分隔键，
-    /// 使得所有小于分隔键的键都小于limit，所有大于等于分隔键的键都大于start
-    /// Params: start  = 起始键（引用传递，可能被修改为更短的分隔键）
-    /// Params: limit  = 上限键
+    /**
+     * 找最短分隔键，用于SSTable索引块优化
+     *
+     * 在[start, limit]之间找到一个尽可能短的字符串作为分隔键，
+     * 使得所有小于分隔键的键都小于limit，所有大于等于分隔键的键都大于start
+     *
+     * Params:
+     *     start = 起始键（引用传递，可能被修改为更短的分隔键）
+     *     limit = 上限键
+     */
     void findShortestSeparator(ref Slice start, Slice limit) const nothrow
     {
         // 找到start和limit第一个不同的位置
@@ -77,9 +100,14 @@ class BytewiseComparator : Comparator
         }
     }
 
-    /// 找短后继键，用于SSTable索引块优化
-    /// 找到一个尽可能短的键，该键在字节序上大于所有以key为前缀的键
-    /// Params: key = 输入键（引用传递，可能被修改为更短的后继键）
+    /**
+     * 找短后继键，用于SSTable索引块优化
+     *
+     * 找到一个尽可能短的键，该键在字节序上大于所有以key为前缀的键
+     *
+     * Params:
+     *     key = 输入键（引用传递，可能被修改为更短的后继键）
+     */
     void findShortSuccessor(ref Slice key) const
     {
         // 简化实现：不做修改

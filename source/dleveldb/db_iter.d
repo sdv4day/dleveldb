@@ -14,11 +14,6 @@ import dleveldb.coding;
  * - 过滤删除标记（ValueType.deletion 的条目对用户不可见）
  * - 序列号覆盖（同键多版本时只返回最新可见版本）
  * - 方向切换（forward/reverse 之间的转换）
- *
- * Params:
- *   userCmp = 用户键比较器
- *   internalIter = 内部键迭代器（由 MergingIterator 等提供）
- *   sequence = 可见序列号上限，只返回 seq <= sequence 的条目
  */
 class DBIter : Iterator
 {

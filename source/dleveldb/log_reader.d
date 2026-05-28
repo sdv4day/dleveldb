@@ -30,7 +30,12 @@ private:
 
 public:
     /// 构造WAL日志读取器
-    /// Params: file = 顺序读取文件, checksum = 是否校验CRC, logNumber = 日志编号, initialOffset = 初始偏移
+    ///
+    /// Params:
+    ///     file = 顺序读取文件
+    ///     checksum = 是否校验CRC
+    ///     logNumber = 日志编号
+    ///     initialOffset = 初始偏移
     this(SequentialFile file, bool checksum = true, ulong logNumber = 0, ulong initialOffset = 0)
     {
         file_ = file;

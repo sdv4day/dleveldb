@@ -28,7 +28,12 @@ private:
 
 public:
     /// 构造SSTable读取器
-    /// Params: options = 读取选项, file = 随机访问文件, fileSize = 文件大小, tableNumber = 表编号
+    ///
+    /// Params:
+    ///     options = 读取选项
+    ///     file = 随机访问文件
+    ///     fileSize = 文件大小
+    ///     tableNumber = 表编号
     this(Options options, RandomAccessFile file, ulong fileSize, ulong tableNumber)
     {
         options_ = options;

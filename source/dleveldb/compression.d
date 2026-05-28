@@ -21,8 +21,10 @@ interface Compressor
     /// 压缩类型
     CompressionType type() const;
 
-    /// 压缩数据，返回压缩后的数据
-    /// 如果压缩率低于12.5%，返回null（调用方应存储原始数据）
+    /**
+     * 压缩数据，返回压缩后的数据
+     * 如果压缩率低于12.5%，返回null（调用方应存储原始数据）
+     */
     ubyte[] compress(Slice input) const;
 
     /// 解压数据

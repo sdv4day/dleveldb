@@ -1,3 +1,13 @@
+/**
+ * 零拷贝字节序列封装 (Slice)
+ *
+ * 提供类似C++ leveldb::Slice的轻量级字节引用，不拥有数据所有权。
+ * 支持泛型类型转换和与GC安全引用创建。
+ *
+ * Copyright: BSL-1.0
+ * Authors: sdv
+ * Date: 2024
+ */
 module dleveldb.slice;
 
 import std.traits;
