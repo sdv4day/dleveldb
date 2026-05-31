@@ -132,7 +132,7 @@ struct Slice
      *   // s1 和 s2 独立存储，互不影响
      */
     static auto owned(T)(T value)
-        if (isBasicType!T || isPODStruct!T)
+        if (isSliceSerializable!T)
     {
         return OwnedSlice!T(value);
     }
@@ -152,7 +152,7 @@ struct Slice
      *   //   此时 s1 引用已被 s2 覆盖！
      */
     static Slice Ref(T)(T value)
-        if (isBasicType!T || isPODStruct!T)
+        if (isSliceSerializable!T)
     {
         import std.traits : Unqual;
         static Unqual!T storage;
@@ -250,10 +250,21 @@ struct Slice
     }
 }
 
-/// 判断类型是否为 POD 结构体
-template isPODStruct(T)
+/// 判断类型是否可序列化为 Slice
+/// 排除：
+///   - class（引用类型 + vtable）
+///   - 关联数组（引用类型）
+///   - 动态多维数组（子数组是独立指针）
+template isSliceSerializable(T)
 {
-    enum isPODStruct = is(T == struct) && !isDynamicArray!T && !isSomeString!T;
+    static if (is(T == class))
+        enum isSliceSerializable = false;
+    else static if (isAssociativeArray!T)
+        enum isSliceSerializable = false;
+    else static if (isDynamicArray!T && isDynamicArray!(ForeachType!T))
+        enum isSliceSerializable = false;  // 动态多维数组：int[][] 等
+    else
+        enum isSliceSerializable = true;
 }
 
 /// 获取类型的字节大小（用于 _lib_obj_size__ 兼容）
@@ -265,7 +276,7 @@ size_t _lib_obj_size__(P)(in P p)
 
 /// 获取基本类型/POD结构体的字节大小
 size_t _lib_obj_size__(P)(in P p)
-    if (isBasicType!P || isPODStruct!P)
+    if (isSliceSerializable!P && !isSomeString!P && !isDynamicArray!P && !isPointer!P)
 {
     return P.sizeof;
 }
@@ -318,7 +329,7 @@ Slice sliceFromBytes(const(ubyte)[] arr) pure nothrow @safe @nogc
  *   assert(slice.as!int == 42);
  */
 struct OwnedSlice(T)
-    if (isBasicType!T || isPODStruct!T)
+    if (isSliceSerializable!T)
 {
     import std.traits : Unqual;
     
@@ -327,13 +338,13 @@ private:
     
 public:
     /// 从值构造
-    this(T value) pure nothrow @safe @nogc
+    this(T value)
     {
         m_storage = cast(Unqual!T) value;
     }
     
     /// 获取底层 Slice
-    Slice slice() const pure nothrow @trusted @nogc
+    Slice slice() const
     {
         return Slice(cast(const(void*)) &m_storage, Unqual!T.sizeof);
     }
@@ -342,7 +353,7 @@ public:
     alias slice this;
     
     /// 获取数据指针
-    const(ubyte)* data() const pure nothrow @trusted @nogc
+    const(ubyte)* data() const
     {
         return cast(const(ubyte*)) &m_storage;
     }
@@ -354,7 +365,7 @@ public:
     }
     
     /// 获取原始值
-    ref const(T) value() const pure nothrow @safe @nogc
+    ref const(T) value() const
     {
         return *cast(const(T*)) &m_storage;
     }
@@ -635,7 +646,7 @@ unittest
 ///
 unittest
 {
-    // POD结构体测试
+    // struct 序列化测试（包括非POD struct）
     struct Point { int x, y; }
     auto pt = Point(10, 20);
     auto ptSlice = Slice.owned(pt);
@@ -643,6 +654,16 @@ unittest
     auto recovered = ptSlice.slice().as!Point;
     assert(recovered.x == 10);
     assert(recovered.y == 20);
+    
+    // 带 postblit 的 struct（非POD）也应该支持
+    struct NonPOD 
+    { 
+        int value;
+        this(this) { value *= 2; }  // postblit
+    }
+    auto np = NonPOD(5);
+    auto npSlice = Slice.owned(np);
+    assert(npSlice.size() == NonPOD.sizeof);
     
     // 数组类型转换测试
     int[] intArr = [1, 2, 3, 4, 5];
@@ -661,4 +682,7 @@ unittest
     auto aliasSlice = Slice("alias");
     assert(aliasSlice.length == aliasSlice.size());
     assert(aliasSlice.isEmpty == aliasSlice.empty());
+    
+    // 验证 class 不被支持
+    static assert(!__traits(compiles, Slice.owned(new Object())));
 }
