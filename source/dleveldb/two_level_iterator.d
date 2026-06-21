@@ -53,7 +53,9 @@ public:
         indexIter_.seekToFirst();
         initDataBlock();
         if (dataIter_ !is null)
+        {
             dataIter_.seekToFirst();
+        }
         skipEmptyDataBlocksForward();
     }
 

@@ -178,22 +178,21 @@ struct VersionEdit
         }
 
         // 新增文件
+        // 字段顺序：level → number → size → smallest → largest（与原版LevelDB一致）
         foreach (nf; newFiles_)
         {
             dst ~= cast(ubyte) Tag.newFile;
             size_t oldLen = dst.length;
             int varintLevel = varintLength(cast(uint) nf.level);
-            dst.length = oldLen + varintLevel;
-            encodeVarint32(dst.ptr + oldLen, cast(uint) nf.level);
-            putLengthPrefixedSlice(dst, nf.metaData.smallest.encode());
-            putLengthPrefixedSlice(dst, nf.metaData.largest.encode());
-            oldLen = dst.length;
             int varintFile = varintLength64(nf.metaData.number);
             int varintSize = varintLength64(nf.metaData.fileSize);
-            dst.length = oldLen + varintFile + varintSize;
+            dst.length = oldLen + varintLevel + varintFile + varintSize;
             ubyte* p = dst.ptr + oldLen;
+            p += encodeVarint32(p, cast(uint) nf.level);
             p += encodeVarint64(p, nf.metaData.number);
             encodeVarint64(p, nf.metaData.fileSize);
+            putLengthPrefixedSlice(dst, nf.metaData.smallest.encode());
+            putLengthPrefixedSlice(dst, nf.metaData.largest.encode());
         }
     }
 
@@ -277,16 +276,16 @@ struct VersionEdit
                     uint level;
                     if (!decodeVarint32(ptr, limit, level))
                         return statusCorruption("bad newFile level");
-                    Slice smallest, largest;
-                    if (!getLengthPrefixedSlice(ptr, limit, smallest))
-                        return statusCorruption("bad newFile smallest");
-                    if (!getLengthPrefixedSlice(ptr, limit, largest))
-                        return statusCorruption("bad newFile largest");
                     ulong fileNumber, fileSize;
                     if (!decodeVarint64(ptr, limit, fileNumber))
                         return statusCorruption("bad newFile number");
                     if (!decodeVarint64(ptr, limit, fileSize))
                         return statusCorruption("bad newFile size");
+                    Slice smallest, largest;
+                    if (!getLengthPrefixedSlice(ptr, limit, smallest))
+                        return statusCorruption("bad newFile smallest");
+                    if (!getLengthPrefixedSlice(ptr, limit, largest))
+                        return statusCorruption("bad newFile largest");
 
                     NewFile nf;
                     nf.level = cast(int) level;

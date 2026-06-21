@@ -37,7 +37,7 @@ struct Slice
         m_size = str.length;
     }
 
-    this(const void* ptr, size_t len) pure nothrow @safe @nogc
+    this(const void* ptr, size_t len) pure nothrow @trusted @nogc
     {
         m_data = cast(const(ubyte)*) ptr;
         m_size = len;
@@ -260,11 +260,55 @@ struct Slice
     }
 }
 
+/// 判断类型是否包含引用类型成员
+/// 引用类型包括：动态数组、关联数组、class
+template hasReferenceMembers(T)
+{
+    static if (!is(T == struct))
+        enum hasReferenceMembers = false;
+    else
+    {
+        import std.traits : Fields;
+        enum hasReferenceMembers = checkFieldsForRef!(Fields!T);
+    }
+}
+
+/// 递归检查类型元组中的每个类型
+private template checkFieldsForRef(Types...)
+{
+    static if (Types.length == 0)
+        enum checkFieldsForRef = false;
+    else
+    {
+        enum first = isReferenceType!(Types[0]);
+        static if (Types.length == 1)
+            enum checkFieldsForRef = first;
+        else
+            enum checkFieldsForRef = first || checkFieldsForRef!(Types[1 .. $]);
+    }
+}
+
+/// 判断单个类型是否是引用类型
+private template isReferenceType(T)
+{
+    static if (isDynamicArray!T)
+        enum isReferenceType = true;           // 动态数组：int[], string
+    else static if (isAssociativeArray!T)
+        enum isReferenceType = true;           // 关联数组：int[string]
+    else static if (is(T == class))
+        enum isReferenceType = true;           // class
+    else static if (is(T == struct))
+        enum isReferenceType = hasReferenceMembers!T;  // 递归检查嵌套 struct
+    else
+        enum isReferenceType = false;          // 基本类型、静态数组、指针等
+}
+
 /// 判断类型是否可序列化为 Slice
 /// 排除：
 ///   - class（引用类型 + vtable）
 ///   - 关联数组（引用类型）
 ///   - 动态多维数组（子数组是独立指针）
+///   - 包含引用类型成员的 struct（如 struct AAA { int[] v1; }）
 template isSliceSerializable(T)
 {
     static if (is(T == class))
@@ -273,6 +317,8 @@ template isSliceSerializable(T)
         enum isSliceSerializable = false;
     else static if (isDynamicArray!T && isDynamicArray!(ForeachType!T))
         enum isSliceSerializable = false;  // 动态多维数组：int[][] 等
+    else static if (is(T == struct) && hasReferenceMembers!T)
+        enum isSliceSerializable = false;  // 包含引用类型成员的 struct
     else
         enum isSliceSerializable = true;
 }
@@ -295,7 +341,8 @@ size_t _lib_obj_size__(P)(in P p)
 size_t _lib_obj_size__(P)(in P p)
     if (isPointer!P)
 {
-    return p.sizeof;
+    import std.traits : PointerTarget;
+    return PointerTarget!P.sizeof;
 }
 
 /// 获取数据的 const(char)* 指针
@@ -695,4 +742,65 @@ unittest
     
     // 验证 class 不被支持
     static assert(!__traits(compiles, Slice.owned(new Object())));
+}
+
+///
+unittest
+{
+    // 引用类型成员检测测试
+    
+    // struct 包含动态数组成员 - 应被排除
+    struct WithDynArray { int[] v1; }
+    static assert(hasReferenceMembers!WithDynArray);
+    static assert(!isSliceSerializable!WithDynArray);
+    static assert(!__traits(compiles, Slice.owned(WithDynArray([1,2,3]))));
+    
+    // struct 包含 string 成员 - 应被排除（string 是动态数组）
+    struct WithString { string name; }
+    static assert(hasReferenceMembers!WithString);
+    static assert(!isSliceSerializable!WithString);
+    
+    // struct 包含关联数组成员 - 应被排除
+    struct WithAssocArray { int[string] map; }
+    static assert(hasReferenceMembers!WithAssocArray);
+    static assert(!isSliceSerializable!WithAssocArray);
+    
+    // struct 包含 class 成员 - 应被排除
+    struct WithClass { Object obj; }
+    static assert(hasReferenceMembers!WithClass);
+    static assert(!isSliceSerializable!WithClass);
+    
+    // struct 只包含基本类型 - 应支持
+    struct PurePOD { int a; double b; }
+    static assert(!hasReferenceMembers!PurePOD);
+    static assert(isSliceSerializable!PurePOD);
+    
+    // struct 包含静态数组 - 应支持
+    struct WithStaticArray { int[10] arr; }
+    static assert(!hasReferenceMembers!WithStaticArray);
+    static assert(isSliceSerializable!WithStaticArray);
+    
+    // struct 包含指针 - 应支持（指针是值类型）
+    struct WithPointer { int* ptr; }
+    static assert(!hasReferenceMembers!WithPointer);
+    static assert(isSliceSerializable!WithPointer);
+    
+    // 嵌套 struct：外层包含引用类型成员的 struct
+    struct Inner { int[] data; }
+    struct Outer { Inner inner; }
+    static assert(hasReferenceMembers!Inner);
+    static assert(hasReferenceMembers!Outer);  // 外层也被排除
+    static assert(!isSliceSerializable!Outer);
+    
+    // 嵌套 struct：内层是纯 POD
+    struct PODInner { int x, y; }
+    struct PODOuter { PODInner inner; int z; }
+    static assert(!hasReferenceMembers!PODInner);
+    static assert(!hasReferenceMembers!PODOuter);
+    static assert(isSliceSerializable!PODOuter);
+    
+    // 空 struct - 应支持
+    struct Empty {}
+    static assert(!hasReferenceMembers!Empty);
+    static assert(isSliceSerializable!Empty);
 }

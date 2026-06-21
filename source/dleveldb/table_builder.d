@@ -95,10 +95,10 @@ public:
             writeIndexEntry(lastKey_, key);
         }
 
-        // 通知过滤器
+        // 通知过滤器（注意：过滤器只存储user key，不包含sequence和type）
         if (filterBlock_ !is null)
         {
-            filterBlock_.addKey(key);
+            filterBlock_.addKey(extractUserKey(key));
         }
 
         lastKey_ = key;

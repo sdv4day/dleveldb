@@ -31,13 +31,13 @@ uint hash(Slice key, uint seed = 0xbc9f1d34) nothrow @trusted @nogc
 
     // 处理剩余字节
     uint k = 0;
-    if (i + 3 <= n)
-        k ^= cast(uint) data[i + 3] << 16;
-    if (i + 2 <= n)
-        k ^= cast(uint) data[i + 2] << 8;
-    if (i + 1 <= n)
+    if (n - i >= 3)
+        k ^= cast(uint) data[i + 2] << 16;
+    if (n - i >= 2)
+        k ^= cast(uint) data[i + 1] << 8;
+    if (n - i >= 1)
     {
-        k ^= cast(uint) data[i + 1];
+        k ^= cast(uint) data[i];
         k *= 0xcc9e2d51;
         k = (k << 15) | (k >> 17);
         k *= 0x1b873593;

@@ -53,7 +53,7 @@ public:
         refs_ = 0;
         compactionScore_ = -1;
         compactionLevel_ = -1;
-        files_.length = kNumLevels;
+        files_.length = numLevels;
         next_ = this;
         prev_ = this;
     }
@@ -121,17 +121,21 @@ public:
     Status get(ReadOptions options, LookupKey lkey, ref ubyte[] value)
     {
         Slice userKey = lkey.userKey();
-        auto icmp = vset_.internalComparator();
+        auto ucmp = vset_.userComparator();
         Status s;
 
         // Level 0：文件可能有重叠，需要检查所有文件
         for (size_t i = 0; i < files_[0].length; i++)
         {
             FileMetaData f = files_[0][i];
-            if (icmp.compare(userKey, f.smallest.userKey()) < 0)
+            if (ucmp.compare(userKey, f.smallest.userKey()) < 0)
+            {
                 continue;
-            if (icmp.compare(userKey, f.largest.userKey()) > 0)
+            }
+            if (ucmp.compare(userKey, f.largest.userKey()) > 0)
+            {
                 continue;
+            }
 
             s = vset_.tableCache_.get(options, f.number, f.fileSize,
                 lkey.internalKey(), value);
@@ -148,7 +152,7 @@ public:
         }
 
         // Level 1+：文件不重叠，二分查找
-        for (int level = 1; level < kNumLevels; level++)
+        for (int level = 1; level < numLevels; level++)
         {
             if (files_[level].length == 0)
                 continue;
@@ -159,7 +163,7 @@ public:
                 continue;
 
             FileMetaData f = files_[level][idx];
-            if (icmp.compare(userKey, f.smallest.userKey()) < 0)
+            if (ucmp.compare(userKey, f.smallest.userKey()) < 0)
                 continue;
 
             s = vset_.tableCache_.get(options, f.number, f.fileSize,
@@ -179,9 +183,9 @@ public:
     }
 
     /// 收集所有层级的SSTable迭代器
-    void addIterators(ReadOptions options, Iterator[] iters)
+    void addIterators(ReadOptions options, ref Iterator[] iters)
     {
-        for (int level = 0; level < kNumLevels; level++)
+        for (int level = 0; level < numLevels; level++)
         {
             foreach (f; files_[level])
             {
@@ -196,14 +200,14 @@ public:
     /// 用于compaction时判断删除标记是否可安全丢弃
     bool overlapInLevel(int level, Slice userKey)
     {
-        auto icmp = vset_.internalComparator();
+        auto ucmp = vset_.userComparator();
         if (level == 0)
         {
             // Level 0 文件有重叠，需遍历所有文件
             foreach (f; files_[0])
             {
-                if (icmp.compare(userKey, f.smallest.userKey()) >= 0 &&
-                    icmp.compare(userKey, f.largest.userKey()) <= 0)
+                if (ucmp.compare(userKey, f.smallest.userKey()) >= 0 &&
+                    ucmp.compare(userKey, f.largest.userKey()) <= 0)
                 {
                     return true;
                 }
@@ -217,7 +221,7 @@ public:
             if (idx >= files_[level].length)
                 return false;
             FileMetaData f = files_[level][idx];
-            return icmp.compare(userKey, f.smallest.userKey()) >= 0;
+            return ucmp.compare(userKey, f.smallest.userKey()) >= 0;
         }
     }
 
@@ -225,14 +229,14 @@ private:
     /// 在指定层级二分查找第一个largest >= target的文件索引
     size_t findFile(int level, Slice targetKey)
     {
-        auto icmp = vset_.internalComparator();
+        auto ucmp = vset_.userComparator();
         auto files = files_[level];
         size_t lo = 0;
         size_t hi = files.length;
         while (lo < hi)
         {
             size_t mid = (lo + hi) / 2;
-            if (icmp.compare(targetKey, files[mid].largest.userKey()) > 0)
+            if (ucmp.compare(targetKey, files[mid].largest.userKey()) > 0)
             {
                 lo = mid + 1;
             }
@@ -270,7 +274,7 @@ private:
     WritableFile descriptorFile_;
     LogWriter descriptorLog_;
 
-    InternalKey[kNumLevels] compactPointer_;
+    InternalKey[numLevels] compactPointer_;
 
     Mutex mutex_;
 
@@ -290,7 +294,7 @@ public:
         options_ = options;
         env_ = env;
         userComparator_ = userCmp;
-        icmp_ = InternalKeyComparator(userCmp);
+        icmp_ = new InternalKeyComparator(userCmp);
 
         dummyVersions_ = new Version(this);
         current_ = dummyVersions_;
@@ -359,7 +363,7 @@ public:
 
         // 创建新Version
         Version v = new Version(this);
-        for (int level = 0; level < kNumLevels; level++)
+        for (int level = 0; level < numLevels; level++)
         {
             auto srcFiles = current_.files(level);
             // 优化：直接赋值而非 .dup，因为后续 applyEdit 会修改副本
@@ -512,6 +516,32 @@ public:
             return s;
         descriptorLog_ = new LogWriter(descriptorFile_);
 
+        // 将当前版本的完整文件快照写入新 MANIFEST，
+        // 确保下次open能正确恢复所有文件
+        {
+            VersionEdit snapshotEdit;
+            for (int level = 0; level < numLevels; level++)
+            {
+                foreach (ref FileMetaData f; v.files(level))
+                {
+                    snapshotEdit.addFile(level, f.number, f.fileSize,
+                        f.smallest, f.largest);
+                }
+            }
+            snapshotEdit.hasNextFileNumber_ = true;
+            snapshotEdit.nextFileNumber_ = nextFileNumber_;
+            snapshotEdit.hasLastSequence_ = true;
+            snapshotEdit.lastSequence_ = lastSequence_;
+            snapshotEdit.hasLogNumber_ = true;
+            snapshotEdit.logNumber_ = logNumber_;
+
+            ubyte[] encoded;
+            snapshotEdit.encodeTo(encoded);
+            Status s2 = descriptorLog_.addRecord(Slice(encoded.ptr, encoded.length));
+            if (!s2.ok())
+                return s2;
+        }
+
         // 写入CURRENT文件
         writeCurrentFile();
 
@@ -526,7 +556,7 @@ public:
         double bestScore = 1.0;
 
         // 查找最需要压缩的层级
-        for (int i = 0; i < kNumLevels - 1; i++)
+        for (int i = 0; i < numLevels - 1; i++)
         {
             double score = current_.compactionScore();
             if (current_.compactionLevel() == i && score > bestScore)
@@ -540,25 +570,78 @@ public:
         {
             c = new Compaction(level);
 
-            // 选择level层的输入文件（简化：选择第一个文件）
             auto levelFiles = current_.files(level);
             if (levelFiles.length > 0)
             {
-                // TODO: Level 0 应选择所有与压缩指针重叠的文件
-                //       Level 1+ 需使用压缩指针来选取
-                c.inputs_[0] ~= levelFiles[0];
+                if (level == 0)
+                {
+                    // Level 0：选择所有与第一个文件重叠的文件
+                    // L0文件允许键范围重叠，必须将所有重叠文件一起压缩
+                    Slice smallest = levelFiles[0].smallest.encode();
+                    Slice largest = levelFiles[0].largest.encode();
+
+                    // 扩展范围直到没有新的重叠文件
+                    bool expanded = true;
+                    while (expanded)
+                    {
+                        expanded = false;
+                        foreach (f; levelFiles)
+                        {
+                            // 检查文件是否与当前[smallest, largest]重叠
+                            if (icmp_.compare(f.smallest.encode(), largest) <= 0 &&
+                                icmp_.compare(f.largest.encode(), smallest) >= 0)
+                            {
+                                // 检查是否已在输入列表中
+                                bool alreadyAdded = false;
+                                foreach (existing; c.inputs_[0])
+                                {
+                                    if (existing.number == f.number)
+                                    {
+                                        alreadyAdded = true;
+                                        break;
+                                    }
+                                }
+                                if (!alreadyAdded)
+                                {
+                                    c.inputs_[0] ~= f;
+                                    // 扩展键范围
+                                    if (icmp_.compare(f.smallest.encode(), smallest) < 0)
+                                        smallest = f.smallest.encode();
+                                    if (icmp_.compare(f.largest.encode(), largest) > 0)
+                                        largest = f.largest.encode();
+                                    expanded = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    // Level 1+：选择与压缩指针对应的文件
+                    // 使用当前层的第一个文件（简化实现）
+                    c.inputs_[0] ~= levelFiles[0];
+                }
             }
 
             // 选择level+1层与输入重叠的文件
             if (c.inputs_[0].length > 0)
             {
-                auto nextLevelFiles = current_.files(level + 1);
                 Slice smallest = c.inputs_[0][0].smallest.encode();
                 Slice largest = c.inputs_[0][0].largest.encode();
 
+                // 找到输入文件的整体键范围
+                foreach (f; c.inputs_[0])
+                {
+                    if (icmp_.compare(f.smallest.encode(), smallest) < 0)
+                        smallest = f.smallest.encode();
+                    if (icmp_.compare(f.largest.encode(), largest) > 0)
+                        largest = f.largest.encode();
+                }
+
+                auto nextLevelFiles = current_.files(level + 1);
                 foreach (f; nextLevelFiles)
                 {
-                    // 检查是否与[level smallest, level largest]重叠
+                    // 检查是否与[smallest, largest]重叠
                     if (icmp_.compare(f.smallest.encode(), largest) <= 0 &&
                         icmp_.compare(f.largest.encode(), smallest) >= 0)
                     {
@@ -658,12 +741,12 @@ private:
         double bestScore = -1;
         int bestLevel = -1;
 
-        for (int level = 0; level < kNumLevels - 1; level++)
+        for (int level = 0; level < numLevels - 1; level++)
         {
             double score;
             if (level == 0)
             {
-                score = cast(double) v.numLevelFiles(level) / kL0_CompactionTrigger;
+                score = cast(double) v.numLevelFiles(level) / l0CompactionTrigger;
             }
             else
             {
@@ -685,11 +768,12 @@ private:
     /// 写入CURRENT文件
     Status writeCurrentFile()
     {
-        import std.conv : text;
         import std.string : strip;
+        import std.format : format;
 
         string currentName = currentFileName(dbname_);
-        string manifestBase = "MANIFEST-" ~ text(manifestFileNumber_);
+        // 与 descriptorFileName 使用相同的格式化，确保一致
+        string manifestBase = format("MANIFEST-%06d", manifestFileNumber_);
         string content = manifestBase ~ "\n";
 
         // 先写临时文件，再原子重命名

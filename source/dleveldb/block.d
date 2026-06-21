@@ -13,12 +13,12 @@ import dleveldb.iterator;
 class Block
 {
 private:
-    Slice data_;
-    int numRestarts_;
-    uint restartInterval_;
+    Slice m_data;
+    int m_numRestarts;
+    uint m_restartInterval;
 
-    // 重启点数组在data_中的偏移
-    size_t restartsOffset_;
+    // 重启点数组在m_data中的偏移
+    size_t m_restartsOffset;
 
 public:
     /**
@@ -27,40 +27,40 @@ public:
      */
     this(Slice data)
     {
-        data_ = data;
-        if (data_.size() < uint.sizeof)
+        m_data = data;
+        if (m_data.size() < uint.sizeof)
         {
-            numRestarts_ = 0;
-            restartsOffset_ = 0;
+            m_numRestarts = 0;
+            m_restartsOffset = 0;
             return;
         }
 
         // 最后4字节是重启点数量
-        numRestarts_ = cast(int) decodeFixed32(data_.data() + data_.size() - uint.sizeof);
-        restartsOffset_ = data_.size() - uint.sizeof - cast(size_t) numRestarts_ * uint.sizeof;
+        m_numRestarts = cast(int) decodeFixed32(m_data.data() + m_data.size() - uint.sizeof);
+        m_restartsOffset = m_data.size() - uint.sizeof - cast(size_t) m_numRestarts * uint.sizeof;
 
-        if (restartsOffset_ > data_.size())
+        if (m_restartsOffset > m_data.size())
         {
             // 数据损坏
-            numRestarts_ = 0;
-            restartsOffset_ = 0;
+            m_numRestarts = 0;
+            m_restartsOffset = 0;
         }
     }
 
     /// 获取块大小
-    size_t size() const pure nothrow @safe @nogc { return data_.size(); }
+    size_t size() const pure nothrow @safe @nogc { return m_data.size(); }
 
     /// 获取块数据
-    Slice data() const nothrow @nogc { return data_; }
+    Slice data() const nothrow @nogc { return m_data; }
 
     /// 获取重启点数量
-    int numRestarts() const pure nothrow @safe @nogc { return numRestarts_; }
+    int numRestarts() const pure nothrow @safe @nogc { return m_numRestarts; }
 
     /// 获取第i个重启点的偏移
     uint restartPoint(int i) const nothrow @nogc
     {
-        assert(i >= 0 && i < numRestarts_);
-        return decodeFixed32(data_.data() + restartsOffset_ + i * uint.sizeof);
+        assert(i >= 0 && i < m_numRestarts);
+        return decodeFixed32(m_data.data() + m_restartsOffset + i * uint.sizeof);
     }
 
     /// 创建块内迭代器
@@ -77,14 +77,15 @@ public:
 class BlockIter : Iterator
 {
 private:
-    Block block_;
-    Comparator cmp_;
-    uint restartIndex_;  // 当前重启点索引
-    uint currentOffset_; // 当前条目在块数据中的偏移
-    Slice key_;          // 当前键
-    Slice value_;        // 当前值
-    Status status_;
-    bool valid_;
+    Block m_block;
+    Comparator m_cmp;
+    uint m_restartIndex;  // 当前重启点索引
+    uint m_currentOffset; // 当前条目在块数据中的偏移
+    Slice m_key;          // 当前键
+    Slice m_value;        // 当前值
+    ubyte[] m_keyBuf;     // 键的GC管理缓冲区，防止Slice悬挂引用
+    Status m_status;
+    bool m_valid;
 public:
     /**
      * 构造块内迭代器
@@ -94,41 +95,41 @@ public:
      */
     this(Block block, Comparator cmp) nothrow
     {
-        block_ = block;
-        cmp_ = cmp;
-        restartIndex_ = 0;
-        currentOffset_ = 0;
-        valid_ = false;
+        m_block = block;
+        m_cmp = cmp;
+        m_restartIndex = 0;
+        m_currentOffset = 0;
+        m_valid = false;
     }
 
     /**
      * 检查迭代器是否指向有效条目
      * Returns: 若当前指向有效条目则返回true，否则返回false
      */
-    bool valid() const nothrow @nogc { return valid_; }
+    bool valid() const nothrow @nogc { return m_valid; }
 
     /**
      * 获取当前条目的键
      * Returns: 当前键的Slice引用
      */
-    Slice key() nothrow @nogc { return key_; }
+    Slice key() nothrow @nogc { return m_key; }
     /**
      * 获取当前条目的值
      * Returns: 当前值的Slice引用
      */
-    Slice value() nothrow @nogc { return value_; }
+    Slice value() nothrow @nogc { return m_value; }
     /**
      * 获取迭代器的错误状态
      * Returns: 若解码过程中发生错误则返回对应的错误状态，否则返回OK状态
      */
-    Status status() const nothrow @nogc { return status_; }
+    Status status() const nothrow @nogc { return m_status; }
 
     /// 定位到块内第一个条目
     void seekToFirst()
     {
-        restartIndex_ = 0;
+        m_restartIndex = 0;
         seekToRestartPoint(0);
-        while (valid_ && key_.size() == 0)
+        while (m_valid && m_key.size() == 0)
         {
             next();
         }
@@ -137,34 +138,30 @@ public:
     /// 定位到块内最后一个条目
     void seekToLast()
     {
-        if (block_.numRestarts() == 0)
+        if (m_block.numRestarts() == 0)
         {
-            valid_ = false;
+            m_valid = false;
             return;
         }
-        restartIndex_ = cast(uint) (block_.numRestarts() - 1);
-        seekToRestartPoint(cast(int) restartIndex_);
+        m_restartIndex = cast(uint) (m_block.numRestarts() - 1);
+        seekToRestartPoint(cast(int) m_restartIndex);
+        // 从最后一个重启点扫描前进，直到块末尾
         while (true)
         {
-            // 检查下一个重启点是否有效
-            if (restartIndex_ + 1 >= cast(uint) block_.numRestarts())
-                break;
-            uint nextRestart = block_.restartPoint(cast(int) (restartIndex_ + 1));
-            if (nextRestart <= cast(uint) currentOffset())
+            Slice savedKey = m_key;
+            Slice savedValue = m_value;
+            uint savedOffset = m_currentOffset;
+            uint savedRestartIndex = m_restartIndex;
+            next();
+            if (!m_valid)
             {
-                // 尝试前进
-                Slice savedKey = key_;
-                next();
-                if (!valid_)
-                {
-                    key_ = savedKey;
-                    valid_ = true;
-                    break;
-                }
-            }
-            else
-            {
-                break;
+                // 到达块末尾，恢复最后一个有效条目
+                m_key = savedKey;
+                m_value = savedValue;
+                m_currentOffset = savedOffset;
+                m_restartIndex = savedRestartIndex;
+                m_valid = true;
+                return;
             }
         }
     }
@@ -177,13 +174,13 @@ public:
     {
         // 二分搜索找到target所在的重启点
         int left = 0;
-        int right = block_.numRestarts() - 1;
+        int right = m_block.numRestarts() - 1;
 
         while (left < right)
         {
             int mid = (left + right + 1) / 2;
-            uint offset = block_.restartPoint(mid);
-            if (decodeEntryAt(offset) && cmp_.compare(key_, target) < 0)
+            uint offset = m_block.restartPoint(mid);
+            if (decodeEntryAt(offset) && m_cmp.compare(m_key, target) < 0)
             {
                 left = mid;
             }
@@ -193,13 +190,13 @@ public:
             }
         }
 
-        restartIndex_ = cast(uint) left;
+        m_restartIndex = cast(uint) left;
         seekToRestartPoint(left);
 
         // 线性搜索找到>=target的条目
-        while (valid_)
+        while (m_valid)
         {
-            if (cmp_.compare(key_, target) >= 0)
+            if (m_cmp.compare(m_key, target) >= 0)
                 return;
             next();
         }
@@ -211,84 +208,87 @@ public:
      */
     void next()
     {
-        assert(valid_);
+        assert(m_valid);
         uint offset = cast(uint) currentOffset();
 
-        if (offset >= cast(uint) block_.restartsOffset_)
+        if (offset >= cast(uint) m_block.m_restartsOffset)
         {
-            valid_ = false;
+            m_valid = false;
             return;
         }
 
         // 先从当前偏移处解码，计算当前条目大小以跳到下一个
-        const(ubyte)* ptr = block_.data().data() + offset;
-        const(ubyte)* limit = block_.data().data() + block_.restartsOffset_;
+        const(ubyte)* ptr = m_block.data().data() + offset;
+        const(ubyte)* limit = m_block.data().data() + m_block.m_restartsOffset;
 
         uint sharedLen, nonShared, valueLength;
         if (!decodeVarint32(ptr, limit, sharedLen) ||
             !decodeVarint32(ptr, limit, nonShared) ||
             !decodeVarint32(ptr, limit, valueLength))
         {
-            valid_ = false;
-            status_ = statusCorruption("bad entry in block");
+            m_valid = false;
+            m_status = statusCorruption("bad entry in block");
             return;
         }
 
         // 跳到下一个条目
-        uint nextOffset = cast(uint) (ptr + nonShared + valueLength - block_.data().data());
+        uint nextOffset = cast(uint) (ptr + nonShared + valueLength - m_block.data().data());
 
-        if (nextOffset >= cast(uint) block_.restartsOffset_)
+        if (nextOffset >= cast(uint) m_block.m_restartsOffset)
         {
-            valid_ = false;
+            m_valid = false;
             return;
         }
 
         // 在nextOffset处解码下一个条目
-        ptr = block_.data().data() + nextOffset;
+        ptr = m_block.data().data() + nextOffset;
 
         if (!decodeVarint32(ptr, limit, sharedLen) ||
             !decodeVarint32(ptr, limit, nonShared) ||
             !decodeVarint32(ptr, limit, valueLength))
         {
-            valid_ = false;
-            status_ = statusCorruption("bad entry in block");
+            m_valid = false;
+            m_status = statusCorruption("bad entry in block");
             return;
         }
 
-        if (sharedLen > key_.size())
+        if (sharedLen > m_key.size())
         {
-            valid_ = false;
-            status_ = statusCorruption("bad shared length");
+            m_valid = false;
+            m_status = statusCorruption("bad shared length");
             return;
         }
 
         // 更新key：保留shared前缀，替换nonShared部分
-        ubyte[] newKey;
-        newKey.length = sharedLen + nonShared;
+        // 注意：必须先复制共享部分，因为改变 m_keyBuf.length 可能导致 GC 重新分配
+        // 从而使 m_key 指向的内存失效
+        ubyte[] sharedBuf;
+        if (sharedLen > 0)
+        {
+            sharedBuf = m_key.asBytes()[0 .. sharedLen].dup;
+        }
+        
+        m_keyBuf.length = sharedLen + nonShared;
         
         if (sharedLen > 0)
         {
-            newKey[0 .. sharedLen] = key_.asBytes()[0 .. sharedLen];
+            m_keyBuf[0 .. sharedLen] = sharedBuf[];
         }
         if (nonShared > 0)
         {
-            newKey[sharedLen .. sharedLen + nonShared] = ptr[0 .. nonShared];
+            m_keyBuf[sharedLen .. sharedLen + nonShared] = ptr[0 .. nonShared];
         }
         ptr += nonShared;
 
-        key_ = Slice(newKey.ptr, newKey.length);
-        // 注意：newKey 由 GC 管理，key_ 引用其内存。
-        // 在 D 语言的 GC 环境下，只要 newKey 在当前栈帧中存活，
-        // GC 不会回收它。但 key_ 长期持有该引用有风险。
-        // 此处保持与原版 LevelDB 一致的设计权衡。
-        value_ = Slice(ptr, valueLength);
-        currentOffset_ = nextOffset;
+        m_key = Slice(m_keyBuf.ptr, m_keyBuf.length);
+        m_value = Slice(ptr, valueLength);
+        m_currentOffset = nextOffset;
 
         // 更新重启点索引
-        while (restartIndex_ + 1 < cast(uint) block_.numRestarts() &&
-               block_.restartPoint(cast(int) (restartIndex_ + 1)) <= nextOffset)
+        while (m_restartIndex + 1 < cast(uint) m_block.numRestarts() &&
+               m_block.restartPoint(cast(int) (m_restartIndex + 1)) <= nextOffset)
         {
-            restartIndex_++;
+            m_restartIndex++;
         }
     }
 
@@ -298,24 +298,56 @@ public:
      */
     void prev()
     {
-        assert(valid_);
+        assert(m_valid);
 
-        // 找到前一个条目
         uint offset = cast(uint) currentOffset();
-        seekToRestartPoint(cast(int) restartIndex_);
 
-        while (currentOffset() < offset)
+        // 回退到当前偏移之前的重启点
+        int ri = cast(int) m_restartIndex;
+        while (ri > 0 && m_block.restartPoint(ri) >= offset)
         {
-            Slice savedKey = key_;
-            Slice savedValue = value_;
+            ri--;
+        }
+
+        seekToRestartPoint(ri);
+
+        // 如果seekToRestartPoint后无效，说明没有前一个条目
+        if (!m_valid)
+        {
+            return;
+        }
+
+        // 从重启点扫描前进，记录前一个条目的完整状态
+        // 注意：必须使用独立的缓冲区来保存 prevKey 和 prevValue，
+        // 因为 next() 会修改 m_keyBuf 和 m_key
+        uint prevOffset = currentOffset();
+        ubyte[] prevKeyBuf = m_keyBuf.dup;  // 复制当前键
+        ubyte[] prevValueBuf = m_value.data()[0 .. m_value.size()].dup;  // 复制当前值
+        uint prevRestartIndex = m_restartIndex;
+
+        while (m_valid && currentOffset() < offset)
+        {
+            prevOffset = currentOffset();
+            prevKeyBuf = m_keyBuf.dup;
+            prevValueBuf = m_value.data()[0 .. m_value.size()].dup;
+            prevRestartIndex = m_restartIndex;
             next();
-            if (currentOffset() >= offset)
-            {
-                key_ = savedKey;
-                value_ = savedValue;
-                valid_ = true;
-                return;
-            }
+        }
+
+        if (prevOffset < offset)
+        {
+            // 恢复到前一个条目的完整状态
+            m_currentOffset = prevOffset;
+            m_keyBuf = prevKeyBuf;
+            m_key = Slice(m_keyBuf.ptr, m_keyBuf.length);
+            m_value = Slice(prevValueBuf.ptr, prevValueBuf.length);
+            m_restartIndex = prevRestartIndex;
+            m_valid = true;
+        }
+        else
+        {
+            // 没有前一个条目（当前就是第一个条目）
+            m_valid = false;
         }
     }
 
@@ -323,45 +355,64 @@ private:
     /// 获取当前偏移
     uint currentOffset() const nothrow @nogc
     {
-        return currentOffset_;
+        return m_currentOffset;
     }
 
     /// 定位到重启点
     void seekToRestartPoint(int index) nothrow
     {
-        if (index < 0 || index >= block_.numRestarts())
+        if (index < 0 || index >= m_block.numRestarts())
         {
-            valid_ = false;
+            m_valid = false;
             return;
         }
 
-        uint offset = block_.restartPoint(index);
-        const(ubyte)* ptr = block_.data().data() + offset;
-        const(ubyte)* limit = block_.data().data() + block_.restartsOffset_;
+        uint offset = m_block.restartPoint(index);
+        const(ubyte)* ptr = m_block.data().data() + offset;
+        const(ubyte)* limit = m_block.data().data() + m_block.m_restartsOffset;
 
         uint sharedLen, nonShared, valueLength;
         if (!decodeVarint32(ptr, limit, sharedLen) ||
             !decodeVarint32(ptr, limit, nonShared) ||
             !decodeVarint32(ptr, limit, valueLength))
         {
-            valid_ = false;
+            m_valid = false;
             return;
         }
 
-        // 重启点处sharedLen=0
-        key_ = Slice(ptr, nonShared);
+        // 重启点处sharedLen必须为0
+        if (sharedLen != 0)
+        {
+            m_valid = false;
+            return;
+        }
+
+        // 复制键数据到 GC 管理的缓冲区，避免 Slice 悬挂引用
+        // 注意：即使 nonShared 为 0，也要确保 m_keyBuf 有有效内存
+        if (nonShared > 0)
+        {
+            m_keyBuf.length = nonShared;
+            m_keyBuf[0 .. nonShared] = ptr[0 .. nonShared];
+            m_key = Slice(m_keyBuf.ptr, m_keyBuf.length);
+        }
+        else
+        {
+            // 空键：使用静态空缓冲区
+            static ubyte[1] emptyBuf = 0;
+            m_key = Slice(emptyBuf.ptr, 0);
+        }
         ptr += nonShared;
-        value_ = Slice(ptr, valueLength);
-        valid_ = true;
-        restartIndex_ = cast(uint) index;
-        currentOffset_ = offset;
+        m_value = Slice(ptr, valueLength);
+        m_valid = true;
+        m_restartIndex = cast(uint) index;
+        m_currentOffset = offset;
     }
 
-    /// 在指定偏移处解码条目
+    /// 在指定偏移处解码条目（仅用于重启点，sharedLen必须为0）
     bool decodeEntryAt(uint offset) nothrow
     {
-        const(ubyte)* ptr = block_.data().data() + offset;
-        const(ubyte)* limit = block_.data().data() + block_.restartsOffset_;
+        const(ubyte)* ptr = m_block.data().data() + offset;
+        const(ubyte)* limit = m_block.data().data() + m_block.m_restartsOffset;
 
         uint sharedLen, nonShared, valueLength;
         if (!decodeVarint32(ptr, limit, sharedLen) ||
@@ -371,9 +422,27 @@ private:
             return false;
         }
 
-        key_ = Slice(ptr, nonShared);
+        // 重启点处 sharedLen 必须为 0
+        if (sharedLen != 0)
+        {
+            return false;
+        }
+
+        // 复制键数据到 GC 管理的缓冲区，避免 Slice 悬挂引用
+        if (nonShared > 0)
+        {
+            m_keyBuf.length = nonShared;
+            m_keyBuf[0 .. nonShared] = ptr[0 .. nonShared];
+            m_key = Slice(m_keyBuf.ptr, m_keyBuf.length);
+        }
+        else
+        {
+            // 空键：使用静态空缓冲区
+            static ubyte[1] emptyBuf = 0;
+            m_key = Slice(emptyBuf.ptr, 0);
+        }
         ptr += nonShared;
-        value_ = Slice(ptr, valueLength);
+        m_value = Slice(ptr, valueLength);
         return true;
     }
 }

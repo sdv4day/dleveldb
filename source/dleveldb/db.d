@@ -47,9 +47,9 @@ import std.traits;
 final class LevelDB
 {
 private:
-    DBImpl impl_;
-    bool isOpen_ = false;
-    LevelDBAA aa_;
+    DBImpl m_impl;
+    bool m_isOpen = false;
+    LevelDBAA m_aa;
 
 public:
     this()
@@ -76,24 +76,24 @@ public:
     /// 打开数据库
     void open(Options opt, string dbpath)
     {
-        if (isOpen_)
+        if (m_isOpen)
             close();
 
-        impl_ = new DBImpl(opt, dbpath);
-        Status s = impl_.open();
+        m_impl = new DBImpl(opt, dbpath);
+        Status s = m_impl.open();
         if (!s.ok())
         {
             import std.logger;
             warning("Failed to open database at ", dbpath, ": ", s.toString());
             throw new LeveldbException(s);
         }
-        isOpen_ = true;
+        m_isOpen = true;
         import std.logger;
         info("Database opened successfully at ", dbpath);
     }
 
     /// 判断数据库是否打开
-    @property bool isOpen() const pure nothrow @safe @nogc { return isOpen_; }
+    @property bool isOpen() const pure nothrow @safe @nogc { return m_isOpen; }
 
     /**
      * 获取关联数组操作接口
@@ -109,20 +109,20 @@ public:
      */
     @property LevelDBAA aa()
     {
-        if (aa_ is null)
-            aa_ = new LevelDBAA(this);
-        return aa_;
+        if (m_aa is null)
+            m_aa = new LevelDBAA(this);
+        return m_aa;
     }
 
     /// 关闭数据库
     void close()
     {
-        if (isOpen_ && impl_ !is null)
+        if (m_isOpen && m_impl !is null)
         {
-            impl_.close();
-            impl_ = null;
-            isOpen_ = false;
-            aa_ = null;
+            m_impl.close();
+            m_impl = null;
+            m_isOpen = false;
+            m_aa = null;
         }
     }
 
@@ -138,7 +138,7 @@ public:
     void put(K, V)(in K key, in V value, const(WriteOptions) opt = WriteOptions())
     {
         checkOpen();
-        auto s = impl_.put(opt, toSliceKey(key), toSlice(value));
+        auto s = m_impl.put(opt, toSliceKey(key), toSlice(value));
         if (!s.ok())
             throw new LeveldbException(s);
     }
@@ -156,7 +156,7 @@ public:
     {
         checkOpen();
         ubyte[] buf;
-        auto s = impl_.get(opt, toSliceKey(key), buf);
+        auto s = m_impl.get(opt, toSliceKey(key), buf);
         if (!s.ok())
         {
             if (s.isNotFound())
@@ -174,7 +174,7 @@ public:
     void del(K)(in K key, const(WriteOptions) opt = WriteOptions())
     {
         checkOpen();
-        auto s = impl_.remove(opt, toSliceKey(key));
+        auto s = m_impl.remove(opt, toSliceKey(key));
         if (!s.ok())
             throw new LeveldbException(s);
     }
@@ -201,7 +201,7 @@ public:
     {
         checkOpen();
         ubyte[] buf;
-        auto s = impl_.get(opt, toSliceKey(key), buf);
+        auto s = m_impl.get(opt, toSliceKey(key), buf);
         if (!s.ok())
         {
             if (s.isNotFound())
@@ -215,7 +215,7 @@ public:
     void write(const(WriteBatch) batch, const(WriteOptions) opt = WriteOptions())
     {
         checkOpen();
-        auto s = impl_.write(opt, cast(WriteBatch) batch);
+        auto s = m_impl.write(opt, cast(WriteBatch) batch);
         if (!s.ok())
             throw new LeveldbException(s);
     }
@@ -224,28 +224,28 @@ public:
     @property const(Snapshot) snapshot()
     {
         checkOpen();
-        return impl_.getSnapshot();
+        return m_impl.getSnapshot();
     }
 
     /// 释放快照
     void releaseSnapshot(const(Snapshot) snap)
     {
         checkOpen();
-        impl_.releaseSnapshot(snap);
+        m_impl.releaseSnapshot(snap);
     }
 
     /// 创建迭代器
     Iterator iterator(const(ReadOptions) opt = ReadOptions())
     {
         checkOpen();
-        return impl_.newIterator(opt);
+        return m_impl.newIterator(opt);
     }
 
     /// 压缩指定范围
     void compactRange(Slice begin, Slice end)
     {
         checkOpen();
-        impl_.compactRange(begin, end);
+        m_impl.compactRange(begin, end);
     }
 
     /**
@@ -317,7 +317,7 @@ public:
 private:
     void checkOpen() const
     {
-        if (!isOpen_)
+        if (!m_isOpen)
             throw new LeveldbException("Not connected to a valid db");
     }
 
@@ -356,7 +356,8 @@ private:
         }
         else static if (isPointer!T)
         {
-            return Slice(cast(const(void*)) val, T.sizeof);
+            import std.traits : PointerTarget;
+            return Slice(cast(const(void*)) val, PointerTarget!T.sizeof);
         }
         else
         {
@@ -403,14 +404,15 @@ private:
             result[] = (cast(ElementEncodingType!V[]) s.asBytes())[0 .. result.length];
             return result;
         }
-        else
+        else static if (isSliceSerializable!V)
         {
             if (V.sizeof > s.size())
-                throw new LeveldbException("Assignment size is larger than slice data size");
-            V result;
-            const(ubyte)* src = s.data();
-            () @trusted { import core.stdc.string : memcpy; memcpy(&result, src, V.sizeof); } ();
-            return result;
+                throw new LeveldbException("Slice size too small for type " ~ V.stringof);
+            return s.as!V;
+        }
+        else
+        {
+            throw new LeveldbException("Type " ~ V.stringof ~ " is not slice-serializable");
         }
     }
 }
@@ -779,7 +781,7 @@ unittest
     import std.path : buildPath;
     
     string dbPath = buildPath(tempDir().idup, "dleveldb_aa_test");
-    if (dbPath.exists) dbPath.rmdirRecurse();
+    if (dbPath.exists) { try { dbPath.rmdirRecurse(); } catch (Exception) {} }
     
     {
         auto db = new LevelDB(dbPath);
@@ -858,7 +860,7 @@ unittest
     }
     
     string dbPath = buildPath(tempDir().idup, "dleveldb_concurrent_test");
-    if (dbPath.exists) dbPath.rmdirRecurse();
+    if (dbPath.exists) { try { dbPath.rmdirRecurse(); } catch (Exception) {} }
     
     {
         auto db = new LevelDB(dbPath);
@@ -912,7 +914,7 @@ unittest
     }
     
     // 清理测试数据库
-    if (dbPath.exists) dbPath.rmdirRecurse();
+    if (dbPath.exists) { try { dbPath.rmdirRecurse(); } catch (Exception) {} }
 }
 
 ///
@@ -925,7 +927,7 @@ unittest
     import std.array : array;
     
     string dbPath = buildPath(tempDir().idup, "dleveldb_boundary_test");
-    if (dbPath.exists) dbPath.rmdirRecurse();
+    if (dbPath.exists) { try { dbPath.rmdirRecurse(); } catch (Exception) {} }
     
     {
         auto db = new LevelDB(dbPath);
@@ -955,7 +957,7 @@ unittest
         db.close();
     }
     
-    if (dbPath.exists) dbPath.rmdirRecurse();
+    if (dbPath.exists) { try { dbPath.rmdirRecurse(); } catch (Exception) {} }
 }
 
 ///
@@ -966,7 +968,7 @@ unittest
     import std.path : buildPath;
     
     string dbPath = buildPath(tempDir().idup, "dleveldb_batch_test");
-    if (dbPath.exists) dbPath.rmdirRecurse();
+    if (dbPath.exists) { try { dbPath.rmdirRecurse(); } catch (Exception) {} }
     
     {
         auto db = new LevelDB(dbPath);
@@ -1015,7 +1017,7 @@ unittest
         db.close();
     }
     
-    if (dbPath.exists) dbPath.rmdirRecurse();
+    if (dbPath.exists) { try { dbPath.rmdirRecurse(); } catch (Exception) {} }
 }
 
 ///
@@ -1026,7 +1028,7 @@ unittest
     import std.path : buildPath;
     
     string dbPath = buildPath(tempDir().idup, "dleveldb_iter_test");
-    if (dbPath.exists) dbPath.rmdirRecurse();
+    if (dbPath.exists) { try { dbPath.rmdirRecurse(); } catch (Exception) {} }
     
     {
         auto db = new LevelDB(dbPath);
@@ -1084,7 +1086,7 @@ unittest
         db.close();
     }
     
-    if (dbPath.exists) dbPath.rmdirRecurse();
+    if (dbPath.exists) { try { dbPath.rmdirRecurse(); } catch (Exception) {} }
 }
 
 ///
@@ -1095,7 +1097,7 @@ unittest
     import std.path : buildPath;
     
     string dbPath = buildPath(tempDir().idup, "dleveldb_stress_test");
-    if (dbPath.exists) dbPath.rmdirRecurse();
+    if (dbPath.exists) { try { dbPath.rmdirRecurse(); } catch (Exception) {} }
     
     {
         auto db = new LevelDB(dbPath);
@@ -1160,7 +1162,69 @@ unittest
         db.close();
     }
     
-    if (dbPath.exists) dbPath.rmdirRecurse();
+    if (dbPath.exists) { try { dbPath.rmdirRecurse(); } catch (Exception) {} }
+}
+
+///
+unittest
+{
+    // 5万条随机字符串键值对测试：写入→验证→关闭→重开→验证→删除
+    import std.file : tempDir, exists, rmdirRecurse;
+    import std.path : buildPath;
+    import std.random : uniform, Random;
+    import std.format : format;
+
+    enum count = 50_000;
+    string dbPath = buildPath(tempDir().idup, "dleveldb_50k_string_test");
+    if (dbPath.exists) { try { dbPath.rmdirRecurse(); } catch (Exception) {} }
+
+    // 生成随机数据：key和val都是随机字符串
+    string[] keys;
+    string[] vals;
+    keys.length = count;
+    vals.length = count;
+    auto rng = Random(12345);
+    foreach (i; 0 .. count)
+    {
+        keys[i] = format("k_%08x_%08x", i, uniform!(uint)(rng));
+        vals[i] = format("v_%08x_%08x", i, uniform!(uint)(rng));
+    }
+
+    // 步骤1：创建数据库，写入5万条，立即读取验证
+    {
+        auto db = new LevelDB(dbPath);
+        foreach (i; 0 .. count)
+        {
+            db.put(Slice(keys[i]), Slice(vals[i]));
+        }
+
+        size_t ok = 0;
+        foreach (i; 0 .. count)
+        {
+            string v;
+            if (db.get(Slice(keys[i]), v) && v == vals[i])
+                ok++;
+        }
+        assert(ok == count, format("string test write-verify: %d/%d", ok, count));
+        db.close();
+    }
+
+    // 步骤2：重新打开数据库，读取验证
+    {
+        auto db = new LevelDB(dbPath);
+        size_t ok = 0;
+        foreach (i; 0 .. count)
+        {
+            string v;
+            if (db.get(Slice(keys[i]), v) && v == vals[i])
+                ok++;
+        }
+        assert(ok == count, format("string test reopen-verify: %d/%d", ok, count));
+        db.close();
+    }
+
+    // 步骤3：关闭删除库
+    if (dbPath.exists) { try { dbPath.rmdirRecurse(); } catch (Exception) {} }
 }
 
 ///
@@ -1169,9 +1233,9 @@ unittest
     // 泛型接口测试
     import std.file : tempDir, exists, rmdirRecurse;
     import std.path : buildPath;
-    
+
     string dbPath = buildPath(tempDir().idup, "dleveldb_generic_test");
-    if (dbPath.exists) dbPath.rmdirRecurse();
+    if (dbPath.exists) { try { dbPath.rmdirRecurse(); } catch (Exception) {} }
     
     {
         auto db = new LevelDB(dbPath);
@@ -1204,7 +1268,122 @@ unittest
         db.close();
     }
     
-    if (dbPath.exists) dbPath.rmdirRecurse();
+    if (dbPath.exists) { try { dbPath.rmdirRecurse(); } catch (Exception) {} }
+}
+
+///
+unittest
+{
+    // 5万条随机字符串键值对的迭代器测试
+    // 流程：写入5万条 → seekToFirst+next正向遍历 → seekToLast+prev反向遍历 → 关闭→重开→再验证
+    import std.file : tempDir, exists, rmdirRecurse;
+    import std.path : buildPath;
+    import std.random : uniform, Random;
+    import std.format : format;
+    import std.algorithm.sorting : sort;
+    import std.algorithm.comparison : cmp;
+
+    enum count = 50_000;
+    string dbPath = buildPath(tempDir().idup, "dleveldb_50k_iter_string_test");
+    if (dbPath.exists) { try { dbPath.rmdirRecurse(); } catch (Exception) {} }
+
+    // 生成随机数据并排序（迭代器应按key有序返回）
+    string[] keys;
+    string[] vals;
+    keys.length = count;
+    vals.length = count;
+    auto rng = Random(11111);
+    foreach (i; 0 .. count)
+    {
+        keys[i] = format("k_%08x_%08x", i, uniform!(uint)(rng));
+        vals[i] = format("v_%08x_%08x", i, uniform!(uint)(rng));
+    }
+    // 排序以供遍历验证
+    string[] sortedKeys = keys.dup;
+    string[] sortedVals;
+    sortedVals.length = count;
+    sort!"a < b"(sortedKeys);
+    // 建立排序后的val映射
+    ulong[string] keyToIdx;
+    foreach (i; 0 .. count)
+        keyToIdx[keys[i]] = i;
+    foreach (i; 0 .. count)
+        sortedVals[i] = vals[keyToIdx[sortedKeys[i]]];
+
+    // 步骤1：创建数据库，写入5万条
+    {
+        auto db = new LevelDB(dbPath);
+        foreach (i; 0 .. count)
+            db.put(Slice(keys[i]), Slice(vals[i]));
+
+        // --- seekToFirst + next 正向遍历 ---
+        auto iter = db.iterator();
+        iter.seekToFirst();
+        size_t idx = 0;
+        while (iter.valid())
+        {
+            assert(iter.key() == Slice(sortedKeys[idx]),
+                format("iter next key[%d] mismatch", idx));
+            assert(iter.value() == Slice(sortedVals[idx]),
+                format("iter next val[%d] mismatch", idx));
+            iter.next();
+            idx++;
+        }
+        assert(idx == count, format("iter next count: %d != %d", idx, count));
+
+        // --- seekToLast + prev 反向遍历 ---
+        iter.seekToLast();
+        idx = count - 1;
+        while (iter.valid())
+        {
+            assert(iter.key() == Slice(sortedKeys[idx]),
+                format("iter prev key[%d] mismatch", idx));
+            assert(iter.value() == Slice(sortedVals[idx]),
+                format("iter prev val[%d] mismatch", idx));
+            iter.prev();
+            if (idx == 0) break; // prev到最后一条之后会invalid
+            idx--;
+        }
+        assert(idx == 0, format("iter prev stopped at idx=%d", idx));
+
+        db.close();
+    }
+
+    // 步骤2：重新打开数据库，迭代器验证
+    {
+        auto db = new LevelDB(dbPath);
+
+        // seekToFirst + next
+        auto iter = db.iterator();
+        iter.seekToFirst();
+        size_t idx = 0;
+        while (iter.valid())
+        {
+            assert(iter.key() == Slice(sortedKeys[idx]),
+                format("reopen iter next key[%d] mismatch", idx));
+            iter.next();
+            idx++;
+        }
+        assert(idx == count, format("reopen iter next count: %d", idx));
+
+        // seekToLast + prev
+        iter.seekToLast();
+        idx = count - 1;
+        while (iter.valid())
+        {
+            assert(iter.key() == Slice(sortedKeys[idx]),
+                format("reopen iter prev key[%d] mismatch", idx));
+            iter.prev();
+            if (idx == 0) break;
+            idx--;
+        }
+        assert(idx == 0);
+
+        db.close();
+    }
+
+    // 步骤3：关闭删除库
+    if (dbPath.exists) { try { dbPath.rmdirRecurse(); } catch (Exception) {} }
 }
 
 string text(T)(T val)

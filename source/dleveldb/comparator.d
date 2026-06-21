@@ -38,6 +38,10 @@ interface Comparator
  */
 class BytewiseComparator : Comparator
 {
+private:
+    ubyte[] separatorBuf_;  // GC管理的缓冲区，用于findShortestSeparator
+
+public:
     /**
      * 获取比较器名称
      * Returns: 比较器名称字符串，用于MANIFEST持久化标识
@@ -85,18 +89,22 @@ class BytewiseComparator : Comparator
         if (diffIndex >= minLen)
         {
             // 一个是另一个的前缀，不做优化
+            return;
         }
-        else
-        {
-            ubyte startByte = start.data()[diffIndex];
-            ubyte limitByte = limit.data()[diffIndex];
 
-            if (startByte + 1 < limitByte)
-            {
-                // 可以缩短start
-                // 注意：这里需要创建新的缓冲区
-                // 简化实现：不做修改
-            }
+        ubyte startByte = start.data()[diffIndex];
+        ubyte limitByte = limit.data()[diffIndex];
+
+        if (startByte + 1 < limitByte)
+        {
+            // 可以缩短start：取前diffIndex+1个字节，最后一个字节加1
+            size_t newLen = diffIndex + 1;
+            // 使用cast移除const以修改成员缓冲区
+            (cast(BytewiseComparator)this).separatorBuf_.length = newLen;
+            (cast(BytewiseComparator)this).separatorBuf_[0 .. diffIndex] =
+                start.data()[0 .. diffIndex];
+            (cast(BytewiseComparator)this).separatorBuf_[diffIndex] = cast(ubyte)(startByte + 1);
+            start = Slice((cast(BytewiseComparator)this).separatorBuf_.ptr, newLen);
         }
     }
 
@@ -110,7 +118,22 @@ class BytewiseComparator : Comparator
      */
     void findShortSuccessor(ref Slice key) const
     {
-        // 简化实现：不做修改
+        // 找到第一个可以+1的字节
+        for (size_t i = 0; i < key.size(); i++)
+        {
+            if (key.data()[i] != ubyte.max)
+            {
+                // 取前i+1个字节，最后一个字节加1
+                size_t newLen = i + 1;
+                (cast(BytewiseComparator)this).separatorBuf_.length = newLen;
+                (cast(BytewiseComparator)this).separatorBuf_[0 .. i] =
+                    key.data()[0 .. i];
+                (cast(BytewiseComparator)this).separatorBuf_[i] = cast(ubyte)(key.data()[i] + 1);
+                key = Slice((cast(BytewiseComparator)this).separatorBuf_.ptr, newLen);
+                return;
+            }
+        }
+        // 所有字节都是0xFF，不做修改
     }
 }
 

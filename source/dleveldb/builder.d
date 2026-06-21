@@ -21,6 +21,10 @@ Status buildTable(string dbname, Env env, Options options,
 {
     if (!iter.valid())
     {
+        iter.seekToFirst();
+    }
+    if (!iter.valid())
+    {
         metaData.number = 0;
         metaData.fileSize = 0;
         return Status();
@@ -37,7 +41,7 @@ Status buildTable(string dbname, Env env, Options options,
         return s;
 
     // 构建SSTable（使用内部键比较器确保有序性）
-    auto icmp = InternalKeyComparator(options.comparator);
+    auto icmp = new InternalKeyComparator(options.comparator);
     auto builder = new TableBuilder(options, file, icmp);
 
     metaData.smallest = InternalKey(extractUserKey(iter.key()), 0, ValueType.value);

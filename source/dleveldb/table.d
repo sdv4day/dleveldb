@@ -8,6 +8,7 @@ import dleveldb.block;
 import dleveldb.filter_block;
 import dleveldb.coding;
 import dleveldb.comparator;
+import dleveldb.dbformat;
 import dleveldb.env;
 
 /**
@@ -25,6 +26,7 @@ private:
     FilterBlockReader filterBlock_;
     ulong tableNumber_;
     bool closed_;
+    InternalKeyComparator icmp_;
 
 public:
     /// 构造SSTable读取器
@@ -41,6 +43,7 @@ public:
         fileSize_ = fileSize;
         tableNumber_ = tableNumber;
         closed_ = false;
+        icmp_ = new InternalKeyComparator(options.comparator);
     }
 
     /// 析构函数，释放资源并关闭文件句柄
@@ -114,8 +117,9 @@ public:
     /// 使用布隆过滤器加速
     Status get(ReadOptions options, Slice key, ref ubyte[] value) 
     {
-        // 使用索引块查找
-        auto indexIter = indexBlock_.iterator(options_.comparator);
+        // 使用索引块查找（注意：SSTable的索引块和数据块中存储的键都是InternalKey
+        // 格式 user_key + packed_tag，必须使用InternalKeyComparator比较）
+        auto indexIter = indexBlock_.iterator(icmp_);
         indexIter.seek(key);
 
         if (indexIter.valid())
@@ -131,7 +135,9 @@ public:
             // 检查过滤器
             if (filterBlock_ !is null)
             {
-                if (!filterBlock_.keyMayMatch(cast(uint) handle.offset_, key))
+                // 过滤器是按user key构建的，过滤时也应使用user key
+                Slice userKey = extractUserKey(key);
+                if (!filterBlock_.keyMayMatch(cast(uint) handle.offset_, userKey))
                 {
                     // 过滤器排除，键不存在
                     return statusNotFound("");
@@ -140,21 +146,24 @@ public:
 
             // 读取数据块
             BlockContents blockContents;
-            s = readBlock(file_, fileSize_, handle, blockContents);
-            if (!s.ok())
-                return s;
+            Status s2 = readBlock(file_, fileSize_, handle, blockContents);
+            if (!s2.ok())
+                return s2;
 
+            // 查找数据块中的key
             Block dataBlock = new Block(blockContents.data);
-            auto iter = dataBlock.iterator(options_.comparator);
+            auto iter = dataBlock.iterator(icmp_);
             iter.seek(key);
 
-            if (iter.valid() && options_.comparator.compare(iter.key(), key) == 0)
+            // 注意：只比较 user key 部分。搜索 key 带有 max sequence，
+            // 但存储的 key 有实际 sequence，所以完整的 InternalKey 永远不相等。
+            if (iter.valid() && options_.comparator.compare(extractUserKey(iter.key()), extractUserKey(key)) == 0)
             {
                 Slice val = iter.value();
                 value.length = val.size();
                 if (val.size() > 0)
                 {
-                    value[] = val.asBytes();  // 使用数组切片批量拷贝，比循环快 2-3 倍
+                    value[] = val.asBytes();
                 }
                 return Status();
             }
@@ -166,11 +175,14 @@ public:
     /// 获取索引块迭代器
     BlockIter indexIterator() 
     {
-        return indexBlock_.iterator(options_.comparator);
+        return indexBlock_.iterator(icmp_);
     }
 
     /// 获取文件
     RandomAccessFile file()  @nogc { return file_; }
+
+    /// 获取内部键比较器（用于数据块迭代器和归并排序）
+    Comparator internalComparator()  @nogc { return icmp_; }
 
     /// 获取文件大小
     ulong fileSize() const pure @safe @nogc { return fileSize_; }

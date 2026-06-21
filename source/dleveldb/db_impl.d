@@ -105,7 +105,7 @@ public:
         options_ = sanitizeOptions(options);
         env_ = options_.env;
         userComparator_ = options_.comparator;
-        icmp_ = InternalKeyComparator(userComparator_);
+        icmp_ = new InternalKeyComparator(userComparator_);
 
         mutex_ = new Mutex;
         backgroundWorkFinishedSignal_ = new Condition(mutex_);
@@ -190,6 +190,15 @@ public:
             while (backgroundCompactionScheduled_)
             {
                 backgroundWorkFinishedSignal_.wait();
+            }
+
+            // 先将活跃mem_转为imm_，确保所有数据都会被持久化
+            if (mem_ !is null)
+            {
+                imm_ = mem_;
+                hasImm_ = true;
+                mem_ = new MemTable(icmp_);
+                mem_.addRef();
             }
 
             // 刷新immutable memtable（在锁内操作，避免竞态）
@@ -349,14 +358,12 @@ public:
         // 1. 查找活跃MemTable
         if (mem.get(lkey, value, s))
         {
-            // 找到（包括删除标记）
         }
         else
         {
             // 2. 查找Immutable MemTable
             if (imm !is null && imm.get(lkey, value, s))
             {
-                // 找到
             }
             else
             {
@@ -415,8 +422,8 @@ public:
         // 添加Version迭代器
         current.addIterators(options, iters);
 
-        // 创建合并迭代器
-        Iterator internalIter = newMergingIterator(userComparator_, iters);
+        // 创建合并迭代器（使用 InternalKeyComparator 比较 InternalKey）
+        Iterator internalIter = newMergingIterator(icmp_, iters);
 
         // 包装为用户键迭代器
         Iterator dbIter = newDBIterator(userComparator_, internalIter, sequence);
@@ -520,7 +527,7 @@ private:
                 return bgError_;
             }
 
-            if (allowDelay && versions_.current().numLevelFiles(0) >= kL0_SlowdownWritesTrigger)
+            if (allowDelay && versions_.current().numLevelFiles(0) >= l0SlowdownWritesTrigger)
             {
                 // L0文件过多，延迟写入
                 env_.sleepForMicroseconds(1000);
@@ -536,7 +543,7 @@ private:
                 // 等待immutable memtable压缩完成
                 backgroundWorkFinishedSignal_.wait();
             }
-            else if (versions_.current().numLevelFiles(0) >= kL0_StopWritesTrigger)
+            else if (versions_.current().numLevelFiles(0) >= l0StopWritesTrigger)
             {
                 // L0文件过多，停止写入
                 backgroundWorkFinishedSignal_.wait();
@@ -733,23 +740,68 @@ private:
             iters ~= tableCache_.newIterator(ReadOptions(), f.number, f.fileSize);
         }
 
-        Iterator mergingIter = newMergingIterator(userComparator_, iters);
+        Iterator mergingIter = newMergingIterator(icmp_, iters);
 
-        // 创建SSTable构建器
-        ulong outputNumber = versions_.newFileNumber();
-        string outputName = tableFileName(dbname_, outputNumber);
+        // 压缩输出文件列表（支持分割为多个SSTable）
+        FileMetaData[] outputFiles;
         WritableFile outputFile;
-        Status s = env_.newWritableFile(outputName, outputFile);
+        TableBuilder builder;
+        ulong outputNumber;
+        string outputName;
+        FileMetaData metaData;
+        bool isFirst = true;
+        ulong currentSequence = 0;
+
+        /// 关闭当前输出文件并添加到输出列表
+        Status closeCurrentOutput()
+        {
+            if (builder is null || builder.numEntries() == 0)
+                return Status();
+
+            Status s = builder.finish();
+            if (s.ok())
+            {
+                metaData.number = outputNumber;
+                metaData.fileSize = builder.fileSize();
+                s = outputFile.sync();
+            }
+            if (s.ok())
+            {
+                s = outputFile.close();
+            }
+            if (!s.ok())
+            {
+                outputFile.close();
+                env_.removeFile(outputName);
+                return s;
+            }
+
+            outputFiles ~= metaData;
+            return Status();
+        }
+
+        /// 创建新的输出文件
+        Status openNewOutput()
+        {
+            outputNumber = versions_.newFileNumber();
+            outputName = tableFileName(dbname_, outputNumber);
+            Status s = env_.newWritableFile(outputName, outputFile);
+            if (!s.ok())
+                return s;
+
+            builder = new TableBuilder(options_, outputFile, icmp_);
+            metaData = FileMetaData();
+            isFirst = true;
+            return Status();
+        }
+
+        // 创建第一个输出文件
+        Status s = openNewOutput();
         if (!s.ok())
             return s;
 
-        auto builder = new TableBuilder(options_, outputFile, icmp_);
-        FileMetaData metaData;
-
         // 逐键处理
         mergingIter.seekToFirst();
-        bool isFirst = true;
-        ulong currentSequence = 0;
 
         while (mergingIter.valid())
         {
@@ -816,42 +868,32 @@ private:
                 builder.add(key, value);
                 metaData.largest = InternalKey(parsed.userKey,
                     parsed.sequence, parsed.type);
+
+                // 检查是否需要分割输出文件
+                if (builder.fileSize() >= options_.maxFileSize)
+                {
+                    s = closeCurrentOutput();
+                    if (!s.ok())
+                        return s;
+                    s = openNewOutput();
+                    if (!s.ok())
+                        return s;
+                }
             }
 
             mergingIter.next();
         }
 
-        // 完成SSTable构建
-        if (builder.numEntries() > 0)
-        {
-            s = builder.finish();
-            if (s.ok())
-            {
-                metaData.number = outputNumber;
-                metaData.fileSize = builder.fileSize();
-                s = outputFile.sync();
-            }
-            if (s.ok())
-            {
-                s = outputFile.close();
-            }
-            if (!s.ok())
-            {
-                outputFile.close();
-                env_.removeFile(outputName);
-            }
+        // 关闭最后一个输出文件
+        s = closeCurrentOutput();
+        if (!s.ok())
+            return s;
 
-            if (s.ok())
-            {
-                // 添加新文件到level+1
-                c.edit().addFile(level + 1, metaData.number, metaData.fileSize,
-                    metaData.smallest, metaData.largest);
-            }
-        }
-        else
+        // 添加所有输出文件到版本编辑
+        foreach (meta; outputFiles)
         {
-            outputFile.close();
-            env_.removeFile(outputName);
+            c.edit().addFile(level + 1, meta.number, meta.fileSize,
+                meta.smallest, meta.largest);
         }
 
         // 删除输入文件
@@ -893,7 +935,7 @@ private:
 
         // 添加当前版本中所有SSTable文件编号
         Version current = versions_.current();
-        for (int level = 0; level < kNumLevels; level++)
+        for (int level = 0; level < numLevels; level++)
         {
             foreach (f; current.files(level))
             {

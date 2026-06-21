@@ -15,6 +15,7 @@ private:
     ubyte[] result_;          // 输出缓冲区
     uint[] filterOffsets_;    // 每个过滤器的偏移
     Slice[] keys_;           // 当前块的键集合
+    ubyte[][] keyBufs_;      // 键的GC管理缓冲区，防止Slice悬挂引用
     size_t start_;           // 当前数据块在result_中的起始偏移
 
     enum uint kFilterBaseLg = 11; // 2^11 = 2048
@@ -41,16 +42,19 @@ public:
     }
 
     /// 添加键到当前过滤器
-    void addKey(Slice key) nothrow
+    /// 立即复制键数据到GC管理的缓冲区，防止Slice悬挂引用
+    void addKey(Slice key)
     {
-        keys_ ~= key;
+        ubyte[] buf = key.data()[0 .. key.size()].dup;
+        keyBufs_ ~= buf;
+        keys_ ~= Slice(buf.ptr, buf.length);
     }
 
     /// 完成过滤器块构建
     Slice finish()
     {
-        // 生成最后一个过滤器
-        if (keys_.length == 0)
+        // 生成最后一个过滤器（如果有待处理的键）
+        if (keys_.length > 0)
         {
             generateFilter();
         }
@@ -92,6 +96,7 @@ private:
         filterOffsets_ ~= cast(uint) oldLen;
 
         keys_ = null;
+        keyBufs_ = null;  // 清空键缓冲区，释放GC内存
     }
 }
 
@@ -171,9 +176,12 @@ unittest
     builder.startBlock(2048); // 触发过滤器生成
     auto filterData = builder.finish();
     assert(filterData.size() > 0);
+    
+    // 复制数据到 GC 管理的堆内存，避免 builder 被回收后 Slice 无效
+    ubyte[] filterBuf = filterData.data()[0 .. filterData.size()].dup;
 
     // FilterBlockReader 读取
-    auto reader = new FilterBlockReader(policy, filterData);
+    auto reader = new FilterBlockReader(policy, Slice(filterBuf.ptr, filterBuf.length));
 
     // 已添加的键应可能匹配
     assert(reader.keyMayMatch(0, Slice("foo")));

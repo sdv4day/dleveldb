@@ -62,15 +62,28 @@ struct ParsedInternalKey
  * 内部键比较器
  * 比较顺序：先按userKey升序，再按sequence降序（新版本优先）
  */
-struct InternalKeyComparator
+class InternalKeyComparator : Comparator
 {
-    Comparator userComparator;
+private:
+    Comparator userComparator_;
+
+public:
+    this(Comparator userCmp)
+    {
+        userComparator_ = userCmp;
+    }
+
+    /// 比较器名称（用于MANIFEST持久化）
+    override string name() const
+    {
+        return userComparator_ is null ? "" : userComparator_.name();
+    }
 
     /// 比较两个内部键的大小
     /// Params: a = 第一个内部键
     ///         b = 第二个内部键
     /// Returns: 小于0表示a<b，等于0表示a==b，大于0表示a>b
-    int compare(Slice a, Slice b) const nothrow @nogc
+    override int compare(Slice a, Slice b) const nothrow @nogc
     {
         // 比较内部键：先比较userKey，再比较packedTag（降序）
         size_t aLen = a.size();
@@ -80,7 +93,7 @@ struct InternalKeyComparator
         // 比较userKey部分
         Slice aUserKey = Slice(a.data(), aLen - ulong.sizeof);
         Slice bUserKey = Slice(b.data(), bLen - ulong.sizeof);
-        int r = userComparator.compare(aUserKey, bUserKey);
+        int r = userComparator_.compare(aUserKey, bUserKey);
         if (r != 0)
             return r;
 
@@ -94,10 +107,13 @@ struct InternalKeyComparator
         return 0;
     }
 
+    /// 获取用户比较器
+    Comparator userComparator() const nothrow @nogc { return cast(Comparator) userComparator_; }
+
     /// 比较InternalKey结构体
     int compareInternalKeys(ParsedInternalKey a, ParsedInternalKey b) const
     {
-        int r = userComparator.compare(a.userKey, b.userKey);
+        int r = userComparator_.compare(a.userKey, b.userKey);
         if (r != 0)
             return r;
         if (a.sequence > b.sequence)
@@ -112,7 +128,7 @@ struct InternalKeyComparator
     }
 
     /// 查找短分隔符（用于SSTable索引块）
-    void findShortestSeparator(ref Slice start, Slice limit) const
+    override void findShortestSeparator(ref Slice start, Slice limit) const
     {
         size_t startLen = start.size();
         size_t limitLen = limit.size();
@@ -120,26 +136,32 @@ struct InternalKeyComparator
 
         Slice userStart = Slice(start.data(), startLen - ulong.sizeof);
         Slice userLimit = Slice(limit.data(), limitLen - ulong.sizeof);
-        userComparator.findShortestSeparator(userStart, userLimit);
+        userComparator_.findShortestSeparator(userStart, userLimit);
 
+        // 如果 userStart 被缩短，需要重新构建完整的 InternalKey
+        // 因为索引键必须是有效的 InternalKey 格式
         if (userStart.size() < startLen - ulong.sizeof)
         {
-            start = userStart;
+            // 不缩短，保持原始键
+            // 因为缩短后的键不是有效的 InternalKey
         }
     }
 
     /// 查找短后继键（用于SSTable索引块）
-    void findShortSuccessor(ref Slice key) const
+    override void findShortSuccessor(ref Slice key) const
     {
         size_t keyLen = key.size();
         assert(keyLen >= ulong.sizeof);
 
         Slice userKey = Slice(key.data(), keyLen - ulong.sizeof);
-        userComparator.findShortSuccessor(userKey);
+        userComparator_.findShortSuccessor(userKey);
 
+        // 如果 userKey 被缩短，需要重新构建完整的 InternalKey
+        // 因为索引键必须是有效的 InternalKey 格式
         if (userKey.size() < keyLen - ulong.sizeof)
         {
-            key = userKey;
+            // 不缩短，保持原始键
+            // 因为缩短后的键不是有效的 InternalKey
         }
     }
 }
@@ -150,7 +172,7 @@ struct InternalKeyComparator
  */
 struct InternalKey
 {
-    ubyte[] rep_;
+    ubyte[] m_rep;
 
     /// 构造内部键
     /// Params: userKey = 用户键
@@ -158,41 +180,41 @@ struct InternalKey
     ///         type = 值类型
     this(Slice userKey, ulong seq, ValueType type)
     {
-        rep_.length = userKey.size() + ulong.sizeof;
+        m_rep.length = userKey.size() + ulong.sizeof;
         // 拷贝userKey
-        rep_[0 .. userKey.size()] = userKey.asBytes();
+        m_rep[0 .. userKey.size()] = userKey.asBytes();
         // 编码packedTag
-        encodeFixed64(rep_.ptr + userKey.size(), packSequenceAndType(seq, type));
+        encodeFixed64(m_rep.ptr + userKey.size(), packSequenceAndType(seq, type));
     }
 
     /// 编码为字节切片
     /// Returns: 内部键的字节表示
     Slice encode() const nothrow @nogc
     {
-        return Slice(rep_.ptr, rep_.length);
+        return Slice(m_rep.ptr, m_rep.length);
     }
 
     /// 获取用户键部分
     /// Returns: 去除尾部packed tag后的用户键切片
     Slice userKey() const nothrow @nogc
     {
-        assert(rep_.length >= ulong.sizeof);
-        return Slice(rep_.ptr, rep_.length - ulong.sizeof);
+        assert(m_rep.length >= ulong.sizeof);
+        return Slice(m_rep.ptr, m_rep.length - ulong.sizeof);
     }
 
     /// 从Slice设置内部键内容
     /// Params: s = 包含完整内部键编码的切片
     void setFrom(Slice s) nothrow
     {
-        rep_.length = s.size();
-        rep_[] = s.asBytes()[];
+        m_rep.length = s.size();
+        m_rep[] = s.asBytes()[];
     }
 
     /// 检查内部键是否有效（长度至少包含一个packed tag）
     /// Returns: 有效返回true，否则false
     bool valid() const pure nothrow @safe @nogc
     {
-        return rep_.length >= ulong.sizeof;
+        return m_rep.length >= ulong.sizeof;
     }
 
     /// 解析内部键，提取用户键、序列号和值类型
@@ -201,8 +223,8 @@ struct InternalKey
     {
         assert(valid());
         ParsedInternalKey result;
-        result.userKey = Slice(rep_.ptr, rep_.length - ulong.sizeof);
-        ulong tag = decodeFixed64(rep_.ptr + rep_.length - ulong.sizeof);
+        result.userKey = Slice(m_rep.ptr, m_rep.length - ulong.sizeof);
+        ulong tag = decodeFixed64(m_rep.ptr + m_rep.length - ulong.sizeof);
         result.sequence = unpackSequence(tag);
         result.type = unpackValueType(tag);
         return result;
@@ -216,10 +238,10 @@ struct InternalKey
 struct LookupKey
 {
 private:
-    ubyte[] rep_;
-    size_t start_;     // memtable_key起始位置
-    size_t kstart_;    // internal_key起始位置
-    size_t end_;       // 结束位置
+    ubyte[] m_rep;
+    size_t m_start;     // memtable_key起始位置
+    size_t m_kstart;    // internal_key起始位置
+    size_t m_end;       // 结束位置
 
 public:
     /// 构造查找键
@@ -232,38 +254,38 @@ public:
         int varintLen = varintLength(cast(uint) internalKeySize);
         size_t totalSize = varintLen + internalKeySize;
 
-        rep_.length = totalSize;
-        start_ = 0;
-        kstart_ = varintLen;
-        end_ = totalSize;
+        m_rep.length = totalSize;
+        m_start = 0;
+        m_kstart = varintLen;
+        m_end = totalSize;
 
         // 编码varint32长度
-        encodeVarint32(rep_.ptr, cast(uint) internalKeySize);
+        encodeVarint32(m_rep.ptr, cast(uint) internalKeySize);
 
         // 拷贝userKey
-        rep_[varintLen .. varintLen + userKey.size()] = userKey.asBytes();
+        m_rep[varintLen .. varintLen + userKey.size()] = userKey.asBytes();
 
         // 编码packedTag
-        encodeFixed64(rep_.ptr + varintLen + userKey.size(),
+        encodeFixed64(m_rep.ptr + varintLen + userKey.size(),
             packSequenceAndType(sequence, ValueType.value));
     }
 
     /// MemTable查找用的完整key
     Slice memtableKey() const nothrow @nogc
     {
-        return Slice(rep_.ptr + start_, end_ - start_);
+        return Slice(m_rep.ptr + m_start, m_end - m_start);
     }
 
     /// 内部键部分
     Slice internalKey() const nothrow @nogc
     {
-        return Slice(rep_.ptr + kstart_, end_ - kstart_);
+        return Slice(m_rep.ptr + m_kstart, m_end - m_kstart);
     }
 
     /// 用户键部分
     Slice userKey() const nothrow @nogc
     {
-        return Slice(rep_.ptr + kstart_, end_ - kstart_ - ulong.sizeof);
+        return Slice(m_rep.ptr + m_kstart, m_end - m_kstart - ulong.sizeof);
     }
 }
 
@@ -289,21 +311,21 @@ ulong extractPackedTag(Slice internalKey) nothrow @trusted @nogc
  * 配置常量
  * LSM树的层数
  */
-enum int kNumLevels = 7;
+enum int numLevels = 7;
 /// L0层触发压缩的文件数阈值
-enum int kL0_CompactionTrigger = 4;
+enum int l0CompactionTrigger = 4;
 
 /// L0层写入减速的文件数阈值
-enum int kL0_SlowdownWritesTrigger = 8;
+enum int l0SlowdownWritesTrigger = 8;
 
 /// L0层停止写入的文件数阈值
-enum int kL0_StopWritesTrigger = 12;
+enum int l0StopWritesTrigger = 12;
 
 /// 内存压缩的最大层级
-enum int kMaxMemCompactLevel = 2;
+enum int maxMemCompactLevel = 2;
 
 /// 读取字节数统计周期（1MB）
-enum size_t kReadBytesPeriod = 1048576; // 1MB
+enum size_t readBytesPeriod = 1048576; // 1MB
 
 ///
 unittest
@@ -354,7 +376,7 @@ unittest
     assert(lkey.userKey() == Slice("mykey"));
 
     // InternalKeyComparator
-    auto icmp = InternalKeyComparator(defaultComparator());
+    auto icmp = new InternalKeyComparator(defaultComparator());
     auto ik1 = InternalKey(Slice("a"), 1, ValueType.value).encode();
     auto ik2 = InternalKey(Slice("b"), 1, ValueType.value).encode();
     assert(icmp.compare(ik1, ik2) < 0);

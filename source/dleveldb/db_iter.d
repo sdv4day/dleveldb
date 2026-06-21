@@ -21,8 +21,8 @@ private:
     Comparator userComparator_;
     Iterator internalIter_;
     ulong sequence_;
-    Slice savedKey_;     // 保存的内部键
-    ubyte[] savedValue_; // 保存的值
+    ubyte[] savedKey_;     // GC管理的键缓冲区，防止Slice悬挂引用
+    ubyte[] savedValue_;   // GC管理的值缓冲区
     Status status_;
     bool valid_;
     Direction direction_;
@@ -79,7 +79,7 @@ public:
         if (direction_ != Direction.forward)
         {
             // 切换方向
-            InternalKey ikey = InternalKey(savedKey_, sequence_, ValueType.value);
+            InternalKey ikey = InternalKey(Slice(savedKey_.ptr, savedKey_.length), sequence_, ValueType.value);
             internalIter_.seek(ikey.encode());
             direction_ = Direction.forward;
             if (!internalIter_.valid())
@@ -91,20 +91,43 @@ public:
                 internalIter_.next();
             }
         }
-        findNextUserEntry(true, savedKey_);
+        findNextUserEntry(true, Slice(savedKey_.ptr, savedKey_.length));
     }
 
     /// 移动到上一个可见的用户键条目
     void prev()
     {
         assert(valid());
-        if (direction_ != Direction.reverse)
+        if (direction_ == Direction.forward)
         {
-            // 切换方向
-            InternalKey ikey = InternalKey(savedKey_, sequence_, ValueType.value);
-            internalIter_.seek(ikey.encode());
+            // 切换方向：向前遍历跳过所有同键的条目
+            Slice savedKey = Slice(savedKey_.ptr, savedKey_.length);
+            while (true)
+            {
+                internalIter_.prev();
+                if (!internalIter_.valid())
+                {
+                    valid_ = false;
+                    savedKey_ = null;
+                    savedValue_ = null;
+                    return;
+                }
+                Slice ikey = internalIter_.key();
+                ParsedInternalKey parsed;
+                if (!parseInternalKey(ikey, parsed)) continue;
+                if (parsed.sequence > sequence_) continue;
+                Slice userKey = extractUserKey(ikey);
+                if (userComparator_.compare(userKey, savedKey) < 0)
+                {
+                    // 遇到不同的键，跳出循环
+                    break;
+                }
+            }
             direction_ = Direction.reverse;
+            // 注意：此时 internalIter_ 已经指向不同的键，findPrevUserEntry 会从这里开始处理
         }
+        // 查找前一个有效用户键
+        // 注意：findPrevUserEntry 内部会调用 internalIter_.prev() 移动到下一个位置
         findPrevUserEntry();
     }
 
@@ -112,7 +135,7 @@ public:
     Slice key()
     {
         assert(valid());
-        return savedKey_;
+        return Slice(savedKey_.ptr, savedKey_.length);
     }
 
     /// 获取当前用户值
@@ -150,11 +173,11 @@ private:
                     // 删除标记，跳过所有同键条目
                     Slice userKey = extractUserKey(ikey);
                     skip = true;
-                    savedKey_ = userKey;
+                    savedKey_ = userKey.data()[0 .. userKey.size()].dup;
                 }
                 else if (parsed.type == ValueType.value)
                 {
-                    if (skip && userComparator_.compare(extractUserKey(ikey), savedKey_) <= 0)
+                    if (skip && userComparator_.compare(extractUserKey(ikey), Slice(savedKey_.ptr, savedKey_.length)) <= 0)
                     {
                         // 跳过同键的旧版本
                     }
@@ -162,7 +185,8 @@ private:
                     {
                         // 找到有效值
                         valid_ = true;
-                        savedKey_ = extractUserKey(ikey);
+                        Slice userKey = extractUserKey(ikey);
+                        savedKey_ = userKey.data()[0 .. userKey.size()].dup;
                         Slice val = internalIter_.value();
                         savedValue_ = val.data()[0 .. val.size()].dup;
                         return;
@@ -174,13 +198,13 @@ private:
         valid_ = false;
     }
 
-    /// 向后查找前一个用户键
+    /// 向后查找前一个用户键（从当前位置开始向前遍历）
+    /// 参考 LevelDB 原始实现
     void findPrevUserEntry()
     {
-        ValueType lastType = ValueType.value;
-        Slice lastKey;
-        bool first = true;
-
+        ValueType valueType = ValueType.deletion;
+        ubyte[] lastKey;  // 上一个键
+        
         while (internalIter_.valid())
         {
             Slice ikey = internalIter_.key();
@@ -194,34 +218,43 @@ private:
 
             if (parsed.sequence <= sequence_)
             {
-                Slice userKey = extractUserKey(ikey);
-                if (!first && userComparator_.compare(userKey, lastKey) != 0)
+                // 检查是否遇到不同的键
+                if (valueType != ValueType.deletion && lastKey.length > 0 &&
+                    userComparator_.compare(parsed.userKey, Slice(lastKey.ptr, lastKey.length)) < 0)
                 {
-                    // 遇到不同用户键，检查上一个是否有效
-                    if (lastType == ValueType.value)
-                    {
-                        valid_ = true;
-                        savedKey_ = lastKey;
-                        return;
-                    }
-                    lastType = ValueType.deletion;
+                    // 遇到不同的键，且上一个值不是删除类型
+                    break;
                 }
-                first = false;
-                lastKey = userKey;
-                lastType = parsed.type;
+                valueType = parsed.type;
+                if (valueType == ValueType.deletion)
+                {
+                    lastKey = null;
+                    savedValue_ = null;
+                }
+                else
+                {
+                    Slice userKey = extractUserKey(ikey);
+                    lastKey = userKey.data()[0 .. userKey.size()].dup;
+                    Slice val = internalIter_.value();
+                    savedValue_ = val.data()[0 .. val.size()].dup;
+                }
             }
+            
+            // 移动到前一个键，准备下一次迭代
             internalIter_.prev();
         }
 
-        // 检查最后一个键
-        if (!first && lastType == ValueType.value)
+        if (valueType == ValueType.deletion)
         {
-            valid_ = true;
-            savedKey_ = lastKey;
+            valid_ = false;
+            savedKey_ = null;
+            savedValue_ = null;
+            direction_ = Direction.forward;
         }
         else
         {
-            valid_ = false;
+            valid_ = true;
+            savedKey_ = lastKey;
         }
     }
 
@@ -254,7 +287,7 @@ unittest
     // ====== DBIter.seek() 测试 ======
     // DBIter 包装内部键迭代器，处理删除标记和序列号覆盖
 
-    auto icmp = InternalKeyComparator(defaultComparator());
+    auto icmp = new InternalKeyComparator(defaultComparator());
 
     // --- 测试1: 基本seek定位 ---
     auto mem1 = new MemTable(icmp);
@@ -403,7 +436,7 @@ unittest
 
     // ====== DBIter.seek() 边界情况测试 ======
 
-    auto icmp = InternalKeyComparator(defaultComparator());
+    auto icmp = new InternalKeyComparator(defaultComparator());
 
     // --- 测试1: seek后反向遍历 ---
     // 注意：DBIter的反向遍历需要更复杂的测试设置

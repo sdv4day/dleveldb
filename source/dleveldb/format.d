@@ -129,6 +129,7 @@ enum BlockType : ubyte
 }
 
 /// 读取并解压一个块
+/// 结果数据通过 .dup 复制到 GC 管理的堆内存，确保 Slice 生命周期安全
 Status readBlock(RandomAccessFile file, ulong fileSize, BlockHandle handle, ref BlockContents result)
 {
     import dleveldb.env : RandomAccessFile;
@@ -151,27 +152,32 @@ Status readBlock(RandomAccessFile file, ulong fileSize, BlockHandle handle, ref 
     if (data.size() != n)
         return statusCorruption("truncated block read");
 
-    // 检查CRC
+    // 检查CRC（注意：写入端 CRC = crc32c(type || block_contents)，type 在 block_contents 之后，
+    // 在内存中是 [block_contents][type]，因此需要先计算 type 的 CRC，再 extend block_contents）
     ubyte type = data.data()[n - 1 - uint.sizeof];
     uint expectedCrc = decodeFixed32(data.data() + n - uint.sizeof);
-    uint actualCrc = crc32cValue(data.data(), n - 1 - uint.sizeof);
+    uint actualCrc = crc32cValue(&type, 1);
+    actualCrc = crc32cExtend(actualCrc, data.data(), n - 1 - uint.sizeof);
     if (actualCrc != expectedCrc)
         return statusCorruption("block checksum mismatch");
 
-    // 根据类型处理
-    Slice blockData = Slice(data.data(), cast(size_t) handle.size_);
+    // 将块数据 .dup 到 GC 管理的堆内存，确保 Slice 引用安全
+    // buf 是函数局部变量，函数返回后 GC 可能回收，必须复制
+    ubyte[] blockBuf = new ubyte[cast(size_t) handle.size_];
+    blockBuf[] = data.data()[0 .. cast(size_t) handle.size_];
+
     if (type == cast(ubyte) BlockType.noCompression)
     {
-        result.data = blockData;
-        result.cachable = false;
-        result.heapAllocated = false;
+        result.data = Slice(blockBuf.ptr, blockBuf.length);
+        result.cachable = true;
+        result.heapAllocated = true;
     }
     else
     {
         // 解压（简化实现：暂不支持压缩块）
-        result.data = blockData;
-        result.cachable = false;
-        result.heapAllocated = false;
+        result.data = Slice(blockBuf.ptr, blockBuf.length);
+        result.cachable = true;
+        result.heapAllocated = true;
     }
 
     return Status();

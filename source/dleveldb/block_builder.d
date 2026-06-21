@@ -18,6 +18,7 @@ private:
     bool finished_;        // 是否已调用finish()
     ubyte[] buffer_;       // 输出缓冲区
     Slice lastKey_;        // 上一个键
+    ubyte[] lastKeyBuf_;   // 上一个键的GC管理缓冲区，防止Slice悬挂引用
     int restartInterval_ = 16;
 
 public:
@@ -100,7 +101,9 @@ public:
         }
 
         counter_++;
-        lastKey_ = key;
+        // 复制key数据到GC管理的缓冲区，防止Slice悬挂引用
+        lastKeyBuf_ = key.data()[0 .. key.size()].dup;
+        lastKey_ = Slice(lastKeyBuf_.ptr, lastKeyBuf_.length);
     }
 
     /// 完成块构建，返回块数据

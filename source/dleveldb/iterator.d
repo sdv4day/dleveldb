@@ -68,14 +68,14 @@ interface Iterator
 class EmptyIterator : Iterator
 {
 private:
-    Status status_;
+    Status m_status;
 
 public:
     /// 构造一个状态为 OK 的空迭代器
     this() {}
 
     /// 构造一个指定状态的空迭代器
-    this(Status s) { status_ = s; }
+    this(Status s) { m_status = s; }
 
     /// 始终返回 false
     bool valid() const pure nothrow @safe @nogc { return false; }
@@ -102,7 +102,7 @@ public:
     Slice value() nothrow @nogc { assert(false, "EmptyIterator::value"); return Slice(); }
 
     /// 返回构造时指定的状态
-    Status status() const nothrow @nogc { return status_; }
+    Status status() const nothrow @nogc { return m_status; }
 }
 
 ///
@@ -132,7 +132,7 @@ unittest
     // MemTableIterator.seek(target) 接收 internal key 格式的 target
     // （即 userKey + packedTag），内部自动添加 varint32 长度前缀
 
-    auto icmp = InternalKeyComparator(defaultComparator());
+    auto icmp = new InternalKeyComparator(defaultComparator());
     auto mem = new MemTable(icmp);
     mem.addRef();
 
@@ -247,7 +247,7 @@ unittest
     // ====== MergingIterator.seek() 测试 ======
     // 两个MemTable归并，验证seek定位到所有子迭代器中的最小>=target
 
-    auto icmp = InternalKeyComparator(defaultComparator());
+    auto icmp = new InternalKeyComparator(defaultComparator());
 
     // MemTable1: a->va, c->vc
     auto mem1 = new MemTable(icmp);
@@ -308,7 +308,7 @@ unittest
 
     // ====== MemTableIterator.seek() 边界情况测试 ======
 
-    auto icmp = InternalKeyComparator(defaultComparator());
+    auto icmp = new InternalKeyComparator(defaultComparator());
 
     // --- 测试1: 单键迭代器的各种seek ---
     auto mem1 = new MemTable(icmp);
@@ -428,7 +428,7 @@ unittest
 
     // ====== MergingIterator.seek() 边界情况测试 ======
 
-    auto icmp = InternalKeyComparator(defaultComparator());
+    auto icmp = new InternalKeyComparator(defaultComparator());
 
     // --- 测试1: 一个空迭代器和一个非空迭代器 ---
     auto mem1 = new MemTable(icmp);
@@ -537,9 +537,9 @@ struct KeyValue
 struct IteratorRange
 {
 private:
-    Iterator iter_;
-    KeyValue front_;
-    bool empty_ = true;
+    Iterator m_iter;
+    KeyValue m_front;
+    bool m_empty = true;
     
 public:
     /**
@@ -550,28 +550,28 @@ public:
      */
     this(Iterator iter)
     {
-        iter_ = iter;
+        m_iter = iter;
         updateFront();
     }
     
     /// 检查是否为空
     bool empty() const pure nothrow @nogc
     {
-        return empty_;
+        return m_empty;
     }
     
     /// 获取当前元素
     ref const(KeyValue) front() const pure nothrow @nogc
     {
-        return front_;
+        return m_front;
     }
     
     /// 移动到下一个元素
     void popFront()
     {
-        if (!empty_)
+        if (!m_empty)
         {
-            iter_.next();
+            m_iter.next();
             updateFront();
         }
     }
@@ -587,17 +587,17 @@ public:
     /// 获取底层迭代器
     Iterator iterator() pure nothrow @nogc
     {
-        return iter_;
+        return m_iter;
     }
     
 private:
     void updateFront()
     {
-        empty_ = !iter_.valid();
-        if (!empty_)
+        m_empty = !m_iter.valid();
+        if (!m_empty)
         {
-            front_.key = iter_.key();
-            front_.value = iter_.value();
+            m_front.key = m_iter.key();
+            m_front.value = m_iter.value();
         }
     }
 }
@@ -622,27 +622,27 @@ IteratorRange asRange(Iterator iter)
 struct KeyRange
 {
 private:
-    Iterator iter_;
-    Slice front_;
-    bool empty_ = true;
+    Iterator m_iter;
+    Slice m_front;
+    bool m_empty = true;
     
 public:
     this(Iterator iter)
     {
-        iter_ = iter;
+        m_iter = iter;
         updateFront();
     }
     
-    bool empty() const pure nothrow @nogc { return empty_; }
-    ref const(Slice) front() const pure nothrow @nogc { return front_; }
-    void popFront() { if (!empty_) { iter_.next(); updateFront(); } }
+    bool empty() const pure nothrow @nogc { return m_empty; }
+    ref const(Slice) front() const pure nothrow @nogc { return m_front; }
+    void popFront() { if (!m_empty) { m_iter.next(); updateFront(); } }
     KeyRange save() { return this; }
     
 private:
     void updateFront()
     {
-        empty_ = !iter_.valid();
-        if (!empty_) front_ = iter_.key();
+        m_empty = !m_iter.valid();
+        if (!m_empty) m_front = m_iter.key();
     }
 }
 
@@ -652,27 +652,27 @@ private:
 struct ValueRange
 {
 private:
-    Iterator iter_;
-    Slice front_;
-    bool empty_ = true;
+    Iterator m_iter;
+    Slice m_front;
+    bool m_empty = true;
     
 public:
     this(Iterator iter)
     {
-        iter_ = iter;
+        m_iter = iter;
         updateFront();
     }
     
-    bool empty() const pure nothrow @nogc { return empty_; }
-    ref const(Slice) front() const pure nothrow @nogc { return front_; }
-    void popFront() { if (!empty_) { iter_.next(); updateFront(); } }
+    bool empty() const pure nothrow @nogc { return m_empty; }
+    ref const(Slice) front() const pure nothrow @nogc { return m_front; }
+    void popFront() { if (!m_empty) { m_iter.next(); updateFront(); } }
     ValueRange save() { return this; }
     
 private:
     void updateFront()
     {
-        empty_ = !iter_.valid();
-        if (!empty_) front_ = iter_.value();
+        m_empty = !m_iter.valid();
+        if (!m_empty) m_front = m_iter.value();
     }
 }
 
@@ -717,10 +717,9 @@ unittest
     import dleveldb.dbformat;
     import dleveldb.coding;
     
-    auto icmp = InternalKeyComparator(defaultComparator());
+    auto icmp = new InternalKeyComparator(defaultComparator());
     auto mem = new MemTable(icmp);
     mem.addRef();
-    
     mem.add(1, ValueType.value, Slice("a"), Slice("va"));
     mem.add(2, ValueType.value, Slice("b"), Slice("vb"));
     mem.add(3, ValueType.value, Slice("c"), Slice("vc"));
@@ -781,7 +780,7 @@ unittest
     import std.algorithm : count, filter;
     import std.algorithm.searching : startsWith;
     
-    auto icmp = InternalKeyComparator(defaultComparator());
+    auto icmp = new InternalKeyComparator(defaultComparator());
     auto mem = new MemTable(icmp);
     mem.addRef();
     
