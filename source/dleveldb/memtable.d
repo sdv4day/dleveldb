@@ -42,8 +42,11 @@ struct MemTableKeyComparator
             // 多字节varint，回退到标准解码
             const(ubyte)* tmp = ap;
             if (!decodeVarint32(tmp, tmp + 10, aLen))
+            {
+                // 解码失败，按空键处理
                 aLen = 0;
-            aStart = tmp;
+                aStart = tmp;
+            }
         }
         
         // 解码b的varint32
@@ -58,8 +61,11 @@ struct MemTableKeyComparator
             // 多字节varint，回退到标准解码
             const(ubyte)* tmp = bp;
             if (!decodeVarint32(tmp, tmp + 10, bLen))
+            {
+                // 解码失败，按空键处理
                 bLen = 0;
-            bStart = tmp;
+                bStart = tmp;
+            }
         }
         
         // 直接比较内部键

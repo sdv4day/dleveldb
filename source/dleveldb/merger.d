@@ -17,6 +17,7 @@ private:
     Iterator[] children_;
     int current_;  // 当前最小元素的迭代器索引
     Status status_;
+    bool forward_; // 当前方向：true=向前，false=向后
 
 public:
     /// 构造多路归并迭代器
@@ -27,6 +28,7 @@ public:
         cmp_ = cmp;
         children_ = children;
         current_ = -1;
+        forward_ = true;
     }
 
     /// 析构多路归并迭代器
@@ -54,6 +56,7 @@ public:
         {
             child.seekToFirst();
         }
+        forward_ = true;
         findSmallest();
     }
 
@@ -64,6 +67,7 @@ public:
         {
             child.seekToLast();
         }
+        forward_ = false;
         findLargest();
     }
 
@@ -75,6 +79,7 @@ public:
         {
             child.seek(target);
         }
+        forward_ = true;
         findSmallest();
     }
 
@@ -82,8 +87,26 @@ public:
     void next()
     {
         assert(valid());
-        // 前进当前迭代器
-        children_[current_].next();
+        
+        // 方向切换：从 backward 切换到 forward
+        if (!forward_)
+        {
+            // 保存当前键
+            Slice currentKey = children_[current_].key();
+            // 将所有迭代器 seek 到当前键
+            foreach (child; children_)
+            {
+                child.seek(currentKey);
+            }
+            // 前进当前迭代器到下一个键
+            children_[current_].next();
+            forward_ = true;
+        }
+        else
+        {
+            // 前进当前迭代器
+            children_[current_].next();
+        }
         findSmallest();
     }
 
@@ -91,8 +114,26 @@ public:
     void prev()
     {
         assert(valid());
-        // 后退当前迭代器
-        children_[current_].prev();
+        
+        // 方向切换：从 forward 切换到 backward
+        if (forward_)
+        {
+            // 保存当前键
+            Slice currentKey = children_[current_].key();
+            // 将所有迭代器 seek 到当前键
+            foreach (child; children_)
+            {
+                child.seek(currentKey);
+            }
+            // 后退当前迭代器到前一个键
+            children_[current_].prev();
+            forward_ = false;
+        }
+        else
+        {
+            // 后退当前迭代器
+            children_[current_].prev();
+        }
         findLargest();
     }
 

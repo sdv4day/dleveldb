@@ -58,9 +58,17 @@ public:
     }
 
     /// 读取一条逻辑记录
-    /// record: 输出记录数据
-    /// scratch: 临时缓冲区
-    /// 返回true表示成功读取
+    /// 
+    /// 注意：返回的 record Slice 可能有两种生命周期：
+    /// 1. 对于完整记录（full type），record 指向内部缓冲区，在下一次 readRecord 调用前有效
+    /// 2. 对于分片记录（first/middle/last），record 指向 scratch 缓冲区
+    ///    调用者必须确保 scratch 在使用 record 期间不被修改或释放
+    ///    如需长期保存数据，应将 record 内容复制到自己的缓冲区
+    ///
+    /// Params:
+    ///     record = 输出记录数据（Slice 引用的内存由 scratch 或内部缓冲区提供）
+    ///     scratch = 临时缓冲区，用于组装分片记录
+    /// Returns: true 表示成功读取，false 表示到达文件末尾或出错
     bool readRecord(ref Slice record, ref ubyte[] scratch) 
     {
         while (true)

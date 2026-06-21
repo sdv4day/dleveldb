@@ -207,7 +207,7 @@ struct VersionEdit
             ubyte tag = *ptr;
             ptr++;
 
-            final switch (cast(Tag) tag)
+            switch (tag)
             {
                 case Tag.comparator:
                 {
@@ -255,7 +255,7 @@ struct VersionEdit
                     if (!getLengthPrefixedSlice(ptr, limit, key))
                         return statusCorruption("bad compactPointer key");
                     CompactPointer cp;
-                    cp.level = cast(int) level;
+                    cp.level = level;
                     cp.key.setFrom(key);
                     compactPointers_ ~= cp;
                     break;
@@ -268,7 +268,7 @@ struct VersionEdit
                         return statusCorruption("bad deletedFile level");
                     if (!decodeVarint64(ptr, limit, fileNumber))
                         return statusCorruption("bad deletedFile number");
-                    deletedFiles_ ~= DeletedFile(cast(int) level, fileNumber);
+                    deletedFiles_ ~= DeletedFile(level, fileNumber);
                     break;
                 }
                 case Tag.newFile:
@@ -288,7 +288,7 @@ struct VersionEdit
                         return statusCorruption("bad newFile largest");
 
                     NewFile nf;
-                    nf.level = cast(int) level;
+                    nf.level = level;
                     nf.metaData = FileMetaData(fileNumber, fileSize,
                         InternalKey(), InternalKey());
                     nf.metaData.smallest.setFrom(smallest);
@@ -296,6 +296,11 @@ struct VersionEdit
                     newFiles_ ~= nf;
                     break;
                 }
+                default:
+                    // 未知 tag，跳过（向前兼容）
+                    // 尝试跳过一个 varint 或长度前缀字符串
+                    // 由于不知道具体格式，只能报错
+                    return statusCorruption("unknown tag in VersionEdit");
             }
         }
 

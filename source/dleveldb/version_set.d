@@ -577,8 +577,9 @@ public:
                 {
                     // Level 0：选择所有与第一个文件重叠的文件
                     // L0文件允许键范围重叠，必须将所有重叠文件一起压缩
-                    Slice smallest = levelFiles[0].smallest.encode();
-                    Slice largest = levelFiles[0].largest.encode();
+                    // 注意：使用 InternalKey 存储范围，避免 Slice 悬挂引用
+                    InternalKey smallest = levelFiles[0].smallest;
+                    InternalKey largest = levelFiles[0].largest;
 
                     // 扩展范围直到没有新的重叠文件
                     bool expanded = true;
@@ -588,8 +589,8 @@ public:
                         foreach (f; levelFiles)
                         {
                             // 检查文件是否与当前[smallest, largest]重叠
-                            if (icmp_.compare(f.smallest.encode(), largest) <= 0 &&
-                                icmp_.compare(f.largest.encode(), smallest) >= 0)
+                            if (icmp_.compare(f.smallest.encode(), largest.encode()) <= 0 &&
+                                icmp_.compare(f.largest.encode(), smallest.encode()) >= 0)
                             {
                                 // 检查是否已在输入列表中
                                 bool alreadyAdded = false;
@@ -605,10 +606,10 @@ public:
                                 {
                                     c.inputs_[0] ~= f;
                                     // 扩展键范围
-                                    if (icmp_.compare(f.smallest.encode(), smallest) < 0)
-                                        smallest = f.smallest.encode();
-                                    if (icmp_.compare(f.largest.encode(), largest) > 0)
-                                        largest = f.largest.encode();
+                                    if (icmp_.compare(f.smallest.encode(), smallest.encode()) < 0)
+                                        smallest = f.smallest;
+                                    if (icmp_.compare(f.largest.encode(), largest.encode()) > 0)
+                                        largest = f.largest;
                                     expanded = true;
                                 }
                             }
@@ -626,24 +627,25 @@ public:
             // 选择level+1层与输入重叠的文件
             if (c.inputs_[0].length > 0)
             {
-                Slice smallest = c.inputs_[0][0].smallest.encode();
-                Slice largest = c.inputs_[0][0].largest.encode();
+                // 使用 InternalKey 存储范围，避免 Slice 悬挂引用
+                InternalKey smallest = c.inputs_[0][0].smallest;
+                InternalKey largest = c.inputs_[0][0].largest;
 
                 // 找到输入文件的整体键范围
                 foreach (f; c.inputs_[0])
                 {
-                    if (icmp_.compare(f.smallest.encode(), smallest) < 0)
-                        smallest = f.smallest.encode();
-                    if (icmp_.compare(f.largest.encode(), largest) > 0)
-                        largest = f.largest.encode();
+                    if (icmp_.compare(f.smallest.encode(), smallest.encode()) < 0)
+                        smallest = f.smallest;
+                    if (icmp_.compare(f.largest.encode(), largest.encode()) > 0)
+                        largest = f.largest;
                 }
 
                 auto nextLevelFiles = current_.files(level + 1);
                 foreach (f; nextLevelFiles)
                 {
                     // 检查是否与[smallest, largest]重叠
-                    if (icmp_.compare(f.smallest.encode(), largest) <= 0 &&
-                        icmp_.compare(f.largest.encode(), smallest) >= 0)
+                    if (icmp_.compare(f.smallest.encode(), largest.encode()) <= 0 &&
+                        icmp_.compare(f.largest.encode(), smallest.encode()) >= 0)
                     {
                         c.inputs_[1] ~= f;
                     }

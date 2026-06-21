@@ -88,15 +88,19 @@ public:
         if (k > 30)
             return true; // 保留为匹配，避免误判
 
-        int bits = cast(int) ((filter.size() - 1) * 8);
+        // 使用 size_t 避免溢出，然后检查范围
+        size_t bits = (filter.size() - 1) * 8;
         if (bits < 64)
             bits = 64;
+        // 如果 bits 超过 int 范围，截断到合理的最大值
+        if (bits > int.max)
+            bits = int.max;
 
         uint h = hash(key);
         uint delta = (h >> 17) | (h << 15);
         for (int j = 0; j < k; j++)
         {
-            int bitpos = cast(int) (h % cast(uint) bits);
+            int bitpos = cast(int) (h % bits);
             if ((filter.data()[bitpos / 8] & (1 << (bitpos % 8))) == 0)
                 return false;
             h += delta;

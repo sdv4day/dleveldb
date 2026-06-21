@@ -34,6 +34,7 @@ private:
     BlockBuilder indexBlock_;
     FilterBlockBuilder filterBlock_;
     Slice lastKey_;
+    ubyte[] lastKeyBuf_;  // lastKey_ 的 GC 管理缓冲区，防止 Slice 悬挂引用
     ulong numEntries_;
     bool closed_;
     bool pendingIndexEntry_;  // 是否有待写入的索引条目
@@ -101,7 +102,9 @@ public:
             filterBlock_.addKey(extractUserKey(key));
         }
 
-        lastKey_ = key;
+        // 复制键数据到 GC 管理的缓冲区，防止 Slice 悬挂引用
+        lastKeyBuf_ = key.data()[0 .. key.size()].dup;
+        lastKey_ = Slice(lastKeyBuf_.ptr, lastKeyBuf_.length);
         numEntries_++;
         dataBlock_.add(key, value);
 

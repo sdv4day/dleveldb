@@ -44,7 +44,10 @@ Status buildTable(string dbname, Env env, Options options,
     auto icmp = new InternalKeyComparator(options.comparator);
     auto builder = new TableBuilder(options, file, icmp);
 
-    metaData.smallest = InternalKey(extractUserKey(iter.key()), 0, ValueType.value);
+    // 使用第一个键作为 smallest（直接使用 InternalKey，保留原始序列号和类型）
+    Slice firstKey = iter.key();
+    metaData.smallest = InternalKey(firstKey);
+    
     while (iter.valid())
     {
         Slice key = iter.key();
@@ -68,7 +71,8 @@ Status buildTable(string dbname, Env env, Options options,
         }
 
         builder.add(key, value);
-        metaData.largest = InternalKey(extractUserKey(key), 0, ValueType.value);
+        // 更新 largest 为当前键（直接使用 InternalKey，保留原始序列号和类型）
+        metaData.largest = InternalKey(key);
         iter.next();
     }
 

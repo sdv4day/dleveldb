@@ -200,14 +200,16 @@ class ZstdCompressor : Compressor
             compressed.size()
         );
 
+        // 检查解压是否成功
         if (ZSTD_isError(decompressedSize))
         {
             return statusCorruption("Zstd: decompression failed");
         }
 
+        // 验证解压后的大小是否匹配
         if (decompressedSize != uncompressedLen)
         {
-            return statusCorruption("Zstd: decompressed size mismatch");
+            return statusCorruption("Zstd: size mismatch after decompression");
         }
 
         return Status();

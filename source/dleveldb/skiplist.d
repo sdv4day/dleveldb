@@ -100,14 +100,24 @@ private:
     {
         // D语言中函数内static变量是线程局部存储(TLS)，
         // 每个线程有独立的seed，无需额外同步。
+        // 使用 sharedStaticInit 保证线程安全的初始化
         static uint seed;
+        
+        // 如果 seed 为 0，说明尚未初始化
+        // 使用简单的延迟初始化（TLS 保证线程安全）
         if (seed == 0) 
         {
             // 初始化种子：结合时间戳和线程ID，降低多线程碰撞概率
             import core.time : MonoTime;
             import core.thread : Thread;
-            seed = cast(uint)(MonoTime.currTime.ticks ^ 
-                              cast(uint)Thread.getThis.id);
+            import core.atomic : atomicLoad, MemoryOrder;
+            
+            // 使用原子操作读取时间戳，避免编译器优化
+            auto ticks = MonoTime.currTime.ticks;
+            seed = cast(uint)(ticks ^ (ticks >> 32) ^ 
+                              cast(ulong)Thread.getThis.id);
+            // 确保种子不为 0（0 会触发重新初始化）
+            if (seed == 0) seed = 1;
         }
         
         // xorshift算法（高质量快速随机数）

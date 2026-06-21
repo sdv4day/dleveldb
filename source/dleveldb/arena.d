@@ -66,8 +66,6 @@ public:
         size_t a = (bytes >= (void*).sizeof * 8) ? (void*).sizeof * 8 : (bytes >= (void*).sizeof * 2) ? (void*).sizeof * 2 : (void*).sizeof;
         size_t alignedBytes = (bytes + a - 1) & ~(a - 1);
 
-        
-
         if (alignedBytes <= m_allocBytesRemain)
         {
             // 当前块有足够空间

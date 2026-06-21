@@ -146,6 +146,10 @@ public:
     /// Returns: true表示可能包含（需进一步查找），false表示一定不包含
     bool keyMayMatch(uint blockOffset, Slice key)
     {
+        // 边界检查：baseLg_ 为 0 时会导致除零错误
+        if (baseLg_ == 0 || num_ == 0)
+            return true; // 保守返回 true
+        
         uint filterIndex = blockOffset >> baseLg_;
         if (filterIndex < num_)
         {

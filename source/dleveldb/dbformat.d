@@ -174,6 +174,13 @@ struct InternalKey
 {
     ubyte[] m_rep;
 
+    /// 从已编码的 Slice 构造内部键
+    /// Params: encodedKey = 已编码的内部键（user_key + packed_tag）
+    this(Slice encodedKey)
+    {
+        m_rep = encodedKey.data()[0 .. encodedKey.size()].dup;
+    }
+
     /// 构造内部键
     /// Params: userKey = 用户键
     ///         seq = 序列号
